@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 1600" width="2100" height="1600">
+  <image href="subdivision-map.png" width="2100" height="1600"/>
+  <defs><clipPath id="p2-b10-shape"><path d="M1655 668 H1992 Q2004 668 2004 680 V766 Q2004 778 1992 778 H1655 Q1643 778 1643 766 V680 Q1643 668 1655 668 Z"/></clipPath></defs>
+  <g id="clean-lot-layer" aria-label="Clean white parcel overlay">
+    <path d="M1655 668 H1992 Q2004 668 2004 680 V766 Q2004 778 1992 778 H1655 Q1643 778 1643 766 V680 Q1643 668 1655 668 Z" fill="#ffffff"/>
+    <g clip-path="url(#p2-b10-shape)" fill="none" stroke="#151515" stroke-width="1.5">
+      <path d="M1643 723H2004"/><path d="M1660 668V778"/><path d="M1679 668V778"/><path d="M1698 668V778"/><path d="M1716 668V778"/><path d="M1734 668V778"/><path d="M1752 668V778"/><path d="M1769 668V778"/><path d="M1786 668V778"/><path d="M1804 668V778"/><path d="M1823 668V778"/><path d="M1841 668V778"/><path d="M1860 668V778"/><path d="M1878 668V778"/><path d="M1895 668V778"/><path d="M1914 668V778"/><path d="M1932 668V778"/><path d="M1951 668V778"/><path d="M1969 668V778"/><path d="M1986 668V778"/>
+    </g>
+    <path d="M1655 668 H1992 Q2004 668 2004 680 V766 Q2004 778 1992 778 H1655 Q1643 778 1643 766 V680 Q1643 668 1655 668 Z" fill="none" stroke="#151515" stroke-width="1.5"/>
+  </g>
+</svg>
