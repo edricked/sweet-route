@@ -6,6 +6,7 @@ html, body { min-height:100%; }
 body { margin:0; background:var(--canvas); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; overscroll-behavior:none; }
 button, input, select, textarea { font:inherit; }
 button { cursor:pointer; }
+.home-setup-gate { position:fixed; z-index:100; inset:0; display:grid; place-items:center; padding:22px; background:rgba(9,29,18,.58); backdrop-filter:blur(8px); }.home-setup-gate>div { width:min(390px,100%); display:grid; justify-items:center; gap:11px; padding:28px 24px; border-radius:24px; text-align:center; background:#fff; box-shadow:0 24px 70px rgba(0,0,0,.3); }.home-setup-gate>div>span { width:58px; height:58px; display:grid; place-items:center; border-radius:18px; color:#fff; background:var(--brand); font-size:28px; }.home-setup-gate h2,.home-setup-gate p { margin:0; }.home-setup-gate h2 { font-size:24px; }.home-setup-gate>div>p:not(.eyebrow) { color:var(--muted); font-size:13px; line-height:1.55; }.home-setup-gate .primary-button { width:100%; margin-top:5px; }
 button:disabled { cursor:not-allowed; opacity:.5; }
 
 .delivery-app { min-height:100vh; }

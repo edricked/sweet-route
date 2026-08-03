@@ -11,6 +11,7 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export function useLocalAppData() {
   const [data, setData] = useState<AppData>(EMPTY_APP_DATA);
+  const [isHydrated, setIsHydrated] = useState(false);
   const skipFirstSave = useRef(true);
 
   useEffect(() => {
@@ -70,7 +71,10 @@ export function useLocalAppData() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
         localStorage.setItem(SEEDED_OWNER_CORRECTION_KEY, "1");
       }
-      if (!cancelled) setData(restored);
+      if (!cancelled) {
+        setData(restored);
+        setIsHydrated(true);
+      }
     }
     void hydrate();
     return () => { cancelled = true; };
@@ -81,5 +85,5 @@ export function useLocalAppData() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
 
-  return [data, setData] as const;
+  return [data, setData, isHydrated] as const;
 }

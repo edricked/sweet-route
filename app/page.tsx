@@ -16,7 +16,7 @@ export default function Home() {
   const didDragMapRef = useRef(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const addressImportRef = useRef<HTMLInputElement>(null);
-  const [data, setData] = useLocalAppData();
+  const [data, setData, isHydrated] = useLocalAppData();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
   const [entryMode, setEntryMode] = useState<"order" | "owner">("order");
   const [phase, setPhase] = useState<1 | 2>(1);
@@ -414,6 +414,7 @@ export default function Home() {
 
   return (
     <main className="delivery-app">
+      {isHydrated && !owner && entryMode !== "owner" && <div className="home-setup-gate" role="dialog" aria-modal="true" aria-labelledby="home-setup-title"><div><span>⌂</span><p className="eyebrow">One-time setup</p><h2 id="home-setup-title">Set your home location</h2><p>Sweet Route needs your starting point before it can plan deliveries. Tap your home lot on the map, then enter its Phase, Block, and Lot.</p><button className="primary-button" onClick={beginOwnerSetup}>Set home on map</button></div></div>}
       <header className="app-header">
         <div className="brand-mark">
           {/* Static brand artwork is intentionally rendered without image optimization. */}
