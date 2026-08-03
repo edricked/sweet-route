@@ -18,14 +18,35 @@ export function PwaRegister() {
   useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
 
-    const register = () => {
-      navigator.serviceWorker.register("./sw.js", { scope: "./" }).then((registration) => {
-        registration.update().catch(() => undefined);
-      }).catch(() => undefined);
+    let registration: ServiceWorkerRegistration | undefined;
+    let reloading = false;
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    const register = async () => {
+      try {
+        registration = await navigator.serviceWorker.register("./sw.js", { scope: "./", updateViaCache: "none" });
+        await registration.update();
+      } catch {
+        // The current app remains usable offline if an update check fails.
+      }
+    };
+    const checkForUpdate = () => {
+      if (document.visibilityState === "visible") registration?.update().catch(() => undefined);
+    };
+    const reloadOnNewWorker = () => {
+      if (!hadController || reloading) return;
+      reloading = true;
+      window.location.reload();
     };
 
-    window.addEventListener("load", register, { once: true });
-    return () => window.removeEventListener("load", register);
+    if (document.readyState === "complete") void register();
+    else window.addEventListener("load", register, { once: true });
+    document.addEventListener("visibilitychange", checkForUpdate);
+    navigator.serviceWorker.addEventListener("controllerchange", reloadOnNewWorker);
+    return () => {
+      window.removeEventListener("load", register);
+      document.removeEventListener("visibilitychange", checkForUpdate);
+      navigator.serviceWorker.removeEventListener("controllerchange", reloadOnNewWorker);
+    };
   }, []);
 
   return null;

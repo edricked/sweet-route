@@ -1,8 +1,15 @@
-const CACHE_VERSION = "sweet-route-v20";
+const CACHE_VERSION = "sweet-route-v21";
 const APP_SHELL = ["./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./subdivision-map.png", "./initial-addresses.json"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_VERSION).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE_VERSION)
+      .then((cache) => Promise.all(APP_SHELL.map(async (url) => {
+        const response = await fetch(new Request(url, { cache: "reload" }));
+        if (response.ok) await cache.put(url, response);
+      })))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
