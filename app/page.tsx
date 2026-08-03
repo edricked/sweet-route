@@ -11,7 +11,8 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 export default function Home() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapViewportRef = useRef<HTMLDivElement>(null);
-  const mapDragRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
+  const mapDragRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
+  const mapPanRef = useRef({ x: 0, y: 0 });
   const didDragMapRef = useRef(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const addressImportRef = useRef<HTMLInputElement>(null);
@@ -44,6 +45,11 @@ export default function Home() {
   const [showLayers, setShowLayers] = useState(false);
   const [showAllAddresses, setShowAllAddresses] = useState(true);
   const [addressTransferMessage, setAddressTransferMessage] = useState("");
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => applyMapPan(mapPanRef.current.x, mapPanRef.current.y));
+    return () => window.cancelAnimationFrame(frame);
+  }, [zoom]);
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -174,33 +180,41 @@ export default function Home() {
   }
 
   function startMapDrag(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
     if ((event.target as HTMLElement).closest("button")) return;
     const viewport = event.currentTarget;
-    mapDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop, moved: false };
+    mapDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: mapPanRef.current.x, panY: mapPanRef.current.y, moved: false };
     viewport.setPointerCapture(event.pointerId);
   }
 
   function moveMapDrag(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
     const drag = mapDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
     if (Math.hypot(dx, dy) > 5) { drag.moved = true; didDragMapRef.current = true; }
     if (drag.moved) {
       event.preventDefault();
-      event.currentTarget.scrollLeft = drag.left - dx;
-      event.currentTarget.scrollTop = drag.top - dy;
+      applyMapPan(drag.panX + dx, drag.panY + dy);
     }
   }
 
   function endMapDrag(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
     const drag = mapDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     mapDragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     window.setTimeout(() => { didDragMapRef.current = false; }, 0);
+  }
+
+  function applyMapPan(x: number, y: number) {
+    const viewport = mapViewportRef.current;
+    const surface = mapRef.current;
+    if (!viewport || !surface) return;
+    const minX = Math.min(0, viewport.clientWidth - surface.offsetWidth);
+    const minY = Math.min(0, viewport.clientHeight - surface.offsetHeight);
+    const nextX = surface.offsetWidth <= viewport.clientWidth ? (viewport.clientWidth - surface.offsetWidth) / 2 : Math.min(0, Math.max(minX, x));
+    const nextY = surface.offsetHeight <= viewport.clientHeight ? (viewport.clientHeight - surface.offsetHeight) / 2 : Math.min(0, Math.max(minY, y));
+    mapPanRef.current = { x: nextX, y: nextY };
+    surface.style.transform = `translate3d(${nextX}px, ${nextY}px, 0)`;
   }
 
   function saveEntry() {
@@ -342,7 +356,17 @@ export default function Home() {
     if (!owner || !mapViewportRef.current || !mapRef.current) return;
     const viewport = mapViewportRef.current;
     const surface = mapRef.current;
-    viewport.scrollTo({ left: Math.max(0, owner.x * surface.clientWidth - viewport.clientWidth / 2), top: Math.max(0, owner.y * surface.clientHeight - viewport.clientHeight / 2), behavior: "smooth" });
+    surface.style.transition = "transform 240ms ease-out";
+    applyMapPan(viewport.clientWidth / 2 - owner.x * surface.offsetWidth, viewport.clientHeight / 2 - owner.y * surface.offsetHeight);
+    window.setTimeout(() => { surface.style.transition = ""; }, 260);
+  }
+
+  function resetMapView() {
+    setZoom(minimumZoom);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const viewport = mapViewportRef.current, surface = mapRef.current;
+      if (viewport && surface) applyMapPan((viewport.clientWidth - surface.offsetWidth) / 2, (viewport.clientHeight - surface.offsetHeight) / 2);
+    }));
   }
 
   function prepareMap(image: HTMLImageElement) {
@@ -408,7 +432,7 @@ export default function Home() {
         <section className="map-card">
           <div className="map-bar">
             <div><strong>{data.addresses.length}</strong> saved addresses <span>·</span> <strong>{data.orders.filter((order) => order.status === "ready").length}</strong> ready today</div>
-            <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={() => setZoom(minimumZoom)}>Reset</button></div>
+            <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={resetMapView}>Reset</button></div>
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
           {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label></div>}
