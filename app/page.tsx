@@ -11,9 +11,6 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 export default function Home() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapViewportRef = useRef<HTMLDivElement>(null);
-  const mapDragRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number; moved: boolean } | null>(null);
-  const mapPanRef = useRef({ x: 0, y: 0 });
-  const didDragMapRef = useRef(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const addressImportRef = useRef<HTMLInputElement>(null);
   const [data, setData, isHydrated] = useLocalAppData();
@@ -45,45 +42,6 @@ export default function Home() {
   const [showLayers, setShowLayers] = useState(false);
   const [showAllAddresses, setShowAllAddresses] = useState(true);
   const [addressTransferMessage, setAddressTransferMessage] = useState("");
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => applyMapPan(mapPanRef.current.x, mapPanRef.current.y));
-    return () => window.cancelAnimationFrame(frame);
-  }, [zoom]);
-
-  useEffect(() => {
-    const viewport = mapViewportRef.current;
-    if (!viewport) return;
-    let touchStart: { x: number; y: number; panX: number; panY: number; moved: boolean } | null = null;
-    const start = (event: TouchEvent) => {
-      if ((event.target as HTMLElement).closest("button") || event.touches.length !== 1) return;
-      const touch = event.touches[0];
-      touchStart = { x: touch.clientX, y: touch.clientY, panX: mapPanRef.current.x, panY: mapPanRef.current.y, moved: false };
-    };
-    const move = (event: TouchEvent) => {
-      if (!touchStart || event.touches.length !== 1) return;
-      const touch = event.touches[0];
-      const dx = touch.clientX - touchStart.x, dy = touch.clientY - touchStart.y;
-      if (Math.hypot(dx, dy) > 4) { touchStart.moved = true; didDragMapRef.current = true; }
-      if (!touchStart.moved) return;
-      event.preventDefault();
-      applyMapPan(touchStart.panX + dx, touchStart.panY + dy);
-    };
-    const end = () => {
-      touchStart = null;
-      window.setTimeout(() => { didDragMapRef.current = false; }, 0);
-    };
-    viewport.addEventListener("touchstart", start, { passive: true });
-    viewport.addEventListener("touchmove", move, { passive: false });
-    viewport.addEventListener("touchend", end, { passive: true });
-    viewport.addEventListener("touchcancel", end, { passive: true });
-    return () => {
-      viewport.removeEventListener("touchstart", start);
-      viewport.removeEventListener("touchmove", move);
-      viewport.removeEventListener("touchend", end);
-      viewport.removeEventListener("touchcancel", end);
-    };
-  }, []);
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -201,7 +159,6 @@ export default function Home() {
   }
 
   function onMapClick(event: React.MouseEvent<HTMLDivElement>) {
-    if (didDragMapRef.current) return;
     if ((event.target as HTMLElement).closest("button")) return;
     if (!mapRef.current) return;
     const rect = mapRef.current.getBoundingClientRect();
@@ -211,53 +168,6 @@ export default function Home() {
     });
     setSelectedOrderId(null);
     setSelectedAddressId(null);
-  }
-
-  function startMapDrag(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
-    if ((event.target as HTMLElement).closest("button")) return;
-    const viewport = event.currentTarget;
-    mapDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: mapPanRef.current.x, panY: mapPanRef.current.y, moved: false };
-    viewport.setPointerCapture(event.pointerId);
-  }
-
-  function moveMapDrag(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
-    const drag = mapDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
-    if (Math.hypot(dx, dy) > 5) { drag.moved = true; didDragMapRef.current = true; }
-    if (drag.moved) {
-      event.preventDefault();
-      applyMapPan(drag.panX + dx, drag.panY + dy);
-    }
-  }
-
-  function endMapDrag(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.pointerType === "touch") return;
-    const drag = mapDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    mapDragRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    window.setTimeout(() => { didDragMapRef.current = false; }, 0);
-  }
-
-  function applyMapPan(x: number, y: number) {
-    const viewport = mapViewportRef.current;
-    const surface = mapRef.current;
-    if (!viewport || !surface) return;
-    const paddingX = Math.min(90, viewport.clientWidth * .18);
-    const paddingY = Math.min(110, viewport.clientHeight * .14);
-    const centeredX = (viewport.clientWidth - surface.offsetWidth) / 2;
-    const centeredY = (viewport.clientHeight - surface.offsetHeight) / 2;
-    const minX = Math.min(centeredX, viewport.clientWidth - surface.offsetWidth) - paddingX;
-    const maxX = Math.max(centeredX, 0) + paddingX;
-    const minY = Math.min(centeredY, viewport.clientHeight - surface.offsetHeight) - paddingY;
-    const maxY = Math.max(centeredY, 0) + paddingY;
-    const nextX = Math.min(maxX, Math.max(minX, x));
-    const nextY = Math.min(maxY, Math.max(minY, y));
-    mapPanRef.current = { x: nextX, y: nextY };
-    surface.style.transform = `translate3d(${nextX}px, ${nextY}px, 0)`;
   }
 
   function saveEntry() {
@@ -399,16 +309,14 @@ export default function Home() {
     if (!owner || !mapViewportRef.current || !mapRef.current) return;
     const viewport = mapViewportRef.current;
     const surface = mapRef.current;
-    surface.style.transition = "transform 240ms ease-out";
-    applyMapPan(viewport.clientWidth / 2 - owner.x * surface.offsetWidth, viewport.clientHeight / 2 - owner.y * surface.offsetHeight);
-    window.setTimeout(() => { surface.style.transition = ""; }, 260);
+    viewport.scrollTo({ left: Math.max(0, owner.x * surface.offsetWidth - viewport.clientWidth / 2), top: Math.max(0, owner.y * surface.offsetHeight - viewport.clientHeight / 2), behavior: "smooth" });
   }
 
   function resetMapView() {
     setZoom(minimumZoom);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       const viewport = mapViewportRef.current, surface = mapRef.current;
-      if (viewport && surface) applyMapPan((viewport.clientWidth - surface.offsetWidth) / 2, (viewport.clientHeight - surface.offsetHeight) / 2);
+      if (viewport && surface) viewport.scrollTo({ left: Math.max(0, (surface.offsetWidth - viewport.clientWidth) / 2), top: Math.max(0, (surface.offsetHeight - viewport.clientHeight) / 2) });
     }));
   }
 
@@ -480,7 +388,7 @@ export default function Home() {
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
           {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label></div>}
-          <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick} onPointerDown={startMapDrag} onPointerMove={moveMapDrag} onPointerUp={endMapDrag} onPointerCancel={endMapDrag}>
+          <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick}>
             <div ref={mapRef} className="map-surface" style={{ width: `${zoom * 100}%` }}>
               {/* A native image is required because routing samples its pixels through canvas. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
