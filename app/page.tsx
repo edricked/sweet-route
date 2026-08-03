@@ -183,7 +183,11 @@ export default function Home() {
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
     if (Math.hypot(dx, dy) > 5) { drag.moved = true; didDragMapRef.current = true; }
-    if (drag.moved) { event.currentTarget.scrollLeft = drag.left - dx; event.currentTarget.scrollTop = drag.top - dy; }
+    if (drag.moved) {
+      event.preventDefault();
+      event.currentTarget.scrollLeft = drag.left - dx;
+      event.currentTarget.scrollTop = drag.top - dy;
+    }
   }
 
   function endMapDrag(event: React.PointerEvent<HTMLDivElement>) {
