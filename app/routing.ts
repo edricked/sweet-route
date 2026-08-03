@@ -4,11 +4,24 @@ export type RoadMask = { width: number; height: number; walkable: Uint8Array };
 const MAP_WIDTH = 2100, MAP_HEIGHT = 1600;
 // Dark waterfront/encroachment artwork can resemble asphalt. These normalized
 // regions are known non-roads and must never be included in delivery paths.
-const ROAD_EXCLUSIONS = [
+const ROAD_EXCLUSIONS: Point[][] = [
   // Waterfront encroachment/greenbelt below the Phase 1 blocks. The dark
   // printed fill is not a drivable road, even though it matches road colors.
-  { left:.325, top:.755, right:.575, bottom:.89 },
+  // Follow its slanted outline so nearby real roads remain connected.
+  [
+    {x:.345,y:.755}, {x:.455,y:.755}, {x:.505,y:.825},
+    {x:.475,y:.845}, {x:.405,y:.805}, {x:.345,y:.795},
+  ],
 ];
+
+function insidePolygon(point: Point, polygon: Point[]) {
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    const a=polygon[i],b=polygon[j];
+    if((a.y>point.y)!==(b.y>point.y)&&point.x<(b.x-a.x)*(point.y-a.y)/(b.y-a.y)+a.x)inside=!inside;
+  }
+  return inside;
+}
 
 function distance(a: Point, b: Point) { return Math.hypot((a.x-b.x)*MAP_WIDTH, (a.y-b.y)*MAP_HEIGHT); }
 function dilate(mask: Uint8Array, width: number, height: number, radius: number) {
@@ -42,11 +55,9 @@ export function createRoadMask(image: HTMLImageElement): RoadMask {
   const broadDarkAreas=open(close(raw,width,height,2),width,height,2);
   const connectedRoads=largestComponent(broadDarkAreas,width,height);
   const walkable=close(connectedRoads,width,height,2);
-  for(const exclusion of ROAD_EXCLUSIONS){
-    const left=Math.floor(exclusion.left*width),right=Math.ceil(exclusion.right*width);
-    const top=Math.floor(exclusion.top*height),bottom=Math.ceil(exclusion.bottom*height);
-    for(let y=top;y<bottom;y++)for(let x=left;x<right;x++)walkable[y*width+x]=0;
-  }
+  for(const exclusion of ROAD_EXCLUSIONS)
+    for(let y=0;y<height;y++)for(let x=0;x<width;x++)
+      if(insidePolygon({x:x/(width-1),y:y/(height-1)},exclusion))walkable[y*width+x]=0;
   return {width,height,walkable};
 }
 
