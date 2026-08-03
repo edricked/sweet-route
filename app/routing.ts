@@ -13,6 +13,18 @@ function dilate(mask: Uint8Array, width: number, height: number, radius: number)
 function invert(mask: Uint8Array) { const out=new Uint8Array(mask.length); for(let i=0;i<mask.length;i++) out[i]=mask[i]?0:1; return out; }
 function close(mask: Uint8Array,w:number,h:number,r:number) { return invert(dilate(invert(dilate(mask,w,h,r)),w,h,r)); }
 function open(mask: Uint8Array,w:number,h:number,r:number) { return dilate(invert(dilate(invert(mask),w,h,r)),w,h,r); }
+function largestComponent(mask: Uint8Array,width:number,height:number) {
+  const visited=new Uint8Array(mask.length),queue=new Int32Array(mask.length);let best:number[]=[];
+  for(let seed=0;seed<mask.length;seed++){
+    if(!mask[seed]||visited[seed])continue;
+    let head=0,tail=0;const component:number[]=[];queue[tail++]=seed;visited[seed]=1;
+    while(head<tail){const current=queue[head++],x=current%width,y=Math.floor(current/width);component.push(current);
+      for(const next of[x>0?current-1:-1,x+1<width?current+1:-1,y>0?current-width:-1,y+1<height?current+width:-1])if(next>=0&&mask[next]&&!visited[next]){visited[next]=1;queue[tail++]=next;}
+    }
+    if(component.length>best.length)best=component;
+  }
+  const out=new Uint8Array(mask.length);for(const index of best)out[index]=1;return out;
+}
 
 export function createRoadMask(image: HTMLImageElement): RoadMask {
   const width=600, height=Math.round(width*image.naturalHeight/image.naturalWidth);
@@ -20,7 +32,9 @@ export function createRoadMask(image: HTMLImageElement): RoadMask {
   const context=canvas.getContext("2d",{willReadFrequently:true})!; context.drawImage(image,0,0,width,height);
   const pixels=context.getImageData(0,0,width,height).data, raw=new Uint8Array(width*height);
   for(let i=0;i<raw.length;i++){const o=i*4,r=pixels[o],g=pixels[o+1],b=pixels[o+2]; if(r<75&&g<75&&b<75&&Math.max(r,g,b)-Math.min(r,g,b)<18) raw[i]=1;}
-  return {width,height,walkable:open(close(raw,width,height,2),width,height,2)};
+  const broadDarkAreas=open(close(raw,width,height,2),width,height,2);
+  const connectedRoads=largestComponent(broadDarkAreas,width,height);
+  return {width,height,walkable:close(connectedRoads,width,height,2)};
 }
 
 export function roadPath(from: Point,to: Point,mask: RoadMask): Point[] {
