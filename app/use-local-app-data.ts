@@ -5,6 +5,8 @@ import { Address, AppData, EMPTY_APP_DATA } from "./domain";
 
 const STORAGE_KEY = "phirst-delivery-mvp-v1";
 const INITIAL_ADDRESS_MIGRATION_KEY = "sweet-route-initial-addresses-v1";
+const SEEDED_OWNER_CORRECTION_KEY = "sweet-route-seeded-owner-correction-v1";
+const SEEDED_OWNER_ID = "address-daf414a7-aac7-4488-9800-26150f1d1b78";
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export function useLocalAppData() {
@@ -58,6 +60,15 @@ export function useLocalAppData() {
         } catch {
           // Retry on the next load; never mark an incomplete migration as finished.
         }
+      }
+      if (BASE_PATH && !localStorage.getItem(SEEDED_OWNER_CORRECTION_KEY)) {
+        restored = {
+          ...restored,
+          addresses: restored.addresses.filter((address) => address.id !== SEEDED_OWNER_ID),
+          routeStartAddressId: restored.routeStartAddressId === SEEDED_OWNER_ID ? undefined : restored.routeStartAddressId,
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+        localStorage.setItem(SEEDED_OWNER_CORRECTION_KEY, "1");
       }
       if (!cancelled) setData(restored);
     }
