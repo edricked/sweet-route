@@ -1,0 +1,13 @@
+{
+  "type": "sweet-route-addresses",
+  "version": 1,
+  "addresses": [
+    { "id": "address-fea87acd-45ff-47eb-a020-91456a72bc41", "phase": 2, "block": 10, "lot": 1, "x": 0.7945945945945946, "y": 0.47523325635103925, "isOwner": false, "createdAt": "2026-07-30T10:59:32.413Z" },
+    { "id": "address-daf414a7-aac7-4488-9800-26150f1d1b78", "phase": 2, "block": 10, "lot": 22, "x": 0.8792792792792793, "y": 0.43621247113163975, "isOwner": true, "createdAt": "2026-07-30T11:00:24.892Z" },
+    { "id": "address-796e4f23-da2e-4d41-9c61-d47286b3fc1d", "phase": 2, "block": 17, "lot": 16, "x": 0.7972972972972973, "y": 0.7271278622648699, "isOwner": false, "createdAt": "2026-07-30T11:04:53.706Z" },
+    { "id": "address-53cc21c1-6f17-478a-9402-2765f5fccdbd", "phase": 1, "block": 5, "lot": 1, "x": 0.4275184275184275, "y": 0.25573583257751353, "isOwner": false, "createdAt": "2026-07-30T11:57:26.224Z" },
+    { "id": "address-47e8a4ac-1e7f-437d-9e8e-89a5e9f35325", "phase": 2, "block": 11, "lot": 22, "x": 0.8798798798798799, "y": 0.5116703959928561, "isOwner": false, "createdAt": "2026-07-30T11:58:56.602Z" },
+    { "id": "address-9911a0e6-cc61-4690-a789-82997c914443", "phase": 2, "block": 8, "lot": 14, "x": 0.9806041335453101, "y": 0.5485276089621535, "isOwner": false, "createdAt": "2026-07-30T15:17:57.841Z" },
+    { "id": "address-468630a3-4256-4f51-9761-813f39d90157", "phase": 1, "block": 20, "lot": 2, "x": 0.59353471118177, "y": 0.8598753803796552, "isOwner": false, "createdAt": "2026-07-31T06:23:21.394Z" }
+  ]
+}

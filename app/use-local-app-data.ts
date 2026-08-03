@@ -1,16 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AppData, EMPTY_APP_DATA } from "./domain";
+import { Address, AppData, EMPTY_APP_DATA } from "./domain";
 
 const STORAGE_KEY = "phirst-delivery-mvp-v1";
+const INITIAL_ADDRESS_MIGRATION_KEY = "sweet-route-initial-addresses-v1";
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export function useLocalAppData() {
   const [data, setData] = useState<AppData>(EMPTY_APP_DATA);
   const skipFirstSave = useRef(true);
 
   useEffect(() => {
+    let cancelled = false;
     const saved = localStorage.getItem(STORAGE_KEY);
+    let restored: AppData = EMPTY_APP_DATA;
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Partial<AppData>;
@@ -23,7 +27,7 @@ export function useLocalAppData() {
             const latestOrder = parsedOrders.find((order) => order.addressId === address.id);
             return latestOrder ? { ...address, customerName: latestOrder.customerName, phone: latestOrder.phone } : address;
           });
-          const restored: AppData = {
+          restored = {
             addresses: restoredAddresses,
             orders: restoredOrders,
             products: Array.isArray(parsed.products) ? parsed.products : [],
@@ -33,15 +37,32 @@ export function useLocalAppData() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
             window.history.replaceState({}, "", window.location.pathname);
           }
-          // Hydration intentionally synchronizes React state with the browser repository.
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setData(restored);
         }
       } catch {
         // Never delete a user's records because a future build cannot parse them.
         // Backup/restore can recover the untouched payload.
       }
     }
+    async function hydrate() {
+      if (!localStorage.getItem(INITIAL_ADDRESS_MIGRATION_KEY)) {
+        try {
+          const response = await fetch(`${BASE_PATH}/initial-addresses.json`);
+          if (!response.ok) throw new Error("Initial address migration unavailable");
+          const seed = await response.json() as { type?: string; addresses?: Address[] };
+          if (seed.type !== "sweet-route-addresses" || !Array.isArray(seed.addresses)) throw new Error("Invalid initial address migration");
+          const merged = new Map(seed.addresses.map((address) => [`${address.phase}:${address.block}:${address.lot}`, address]));
+          restored.addresses.forEach((address) => merged.set(`${address.phase}:${address.block}:${address.lot}`, address));
+          restored = { ...restored, addresses: [...merged.values()] };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+          localStorage.setItem(INITIAL_ADDRESS_MIGRATION_KEY, "1");
+        } catch {
+          // Retry on the next load; never mark an incomplete migration as finished.
+        }
+      }
+      if (!cancelled) setData(restored);
+    }
+    void hydrate();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
