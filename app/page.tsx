@@ -14,6 +14,7 @@ export default function Home() {
   const mapDragRef = useRef<{ pointerId: number; x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   const didDragMapRef = useRef(false);
   const imgRef = useRef<HTMLImageElement>(null);
+  const addressImportRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useLocalAppData();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
   const [entryMode, setEntryMode] = useState<"order" | "owner">("order");
@@ -42,6 +43,7 @@ export default function Home() {
   const [productQuantity, setProductQuantity] = useState("1");
   const [showLayers, setShowLayers] = useState(false);
   const [showAllAddresses, setShowAllAddresses] = useState(true);
+  const [addressTransferMessage, setAddressTransferMessage] = useState("");
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -288,6 +290,36 @@ export default function Home() {
     setData((current) => ({ ...current, products: (current.products ?? []).map((product) => product.id === productId ? { ...product, active: !product.active } : product) }));
   }
 
+  function exportAddresses() {
+    const payload = JSON.stringify({ type: "sweet-route-addresses", version: 1, exportedAt: new Date().toISOString(), addresses: data.addresses }, null, 2);
+    const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sweet-route-addresses-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setAddressTransferMessage(`${data.addresses.length} address${data.addresses.length === 1 ? "" : "es"} exported.`);
+  }
+
+  async function importAddresses(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as { type?: string; addresses?: Address[] };
+      if (parsed.type !== "sweet-route-addresses" || !Array.isArray(parsed.addresses)) throw new Error("Invalid address backup");
+      const valid = parsed.addresses.filter((address) => address && typeof address.id === "string" && (address.phase === 1 || address.phase === 2) && Number.isFinite(address.block) && Number.isFinite(address.lot) && Number.isFinite(address.x) && Number.isFinite(address.y));
+      if (!valid.length && parsed.addresses.length) throw new Error("No valid addresses found");
+      setData((current) => {
+        const merged = new Map(current.addresses.map((address) => [`${address.phase}:${address.block}:${address.lot}`, address]));
+        valid.forEach((address) => merged.set(`${address.phase}:${address.block}:${address.lot}`, address));
+        return { ...current, addresses: [...merged.values()] };
+      });
+      setAddressTransferMessage(`${valid.length} address${valid.length === 1 ? "" : "es"} imported. Existing orders and products were kept.`);
+    } catch {
+      setAddressTransferMessage("That file is not a valid Sweet Route address backup.");
+    } finally {
+      if (addressImportRef.current) addressImportRef.current.value = "";
+    }
+  }
+
   function appendSelectedProduct() {
     const product = products.find((item) => item.id === selectedProductId);
     const quantity = Number(productQuantity);
@@ -422,7 +454,7 @@ export default function Home() {
             </div>
           </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
         </aside>
-        {activeTab === "addresses" && <section className="settings-overlay address-book"><div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses</h2></div><button className="primary-button" onClick={beginOrder}>+ Register on map</button></div>{owner && <button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}{data.addresses.filter((address) => !address.isOwner).map((address) => <div className="address-book-row" key={address.id}><button className="address-main" onClick={() => { setSelectedAddressId(address.id); setSelectedOrderId(null); setActiveTab("map"); }}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order) => order.addressId === address.id).length} order(s)</small></div></button><button className="address-add" onClick={() => beginOrderForAddress(address)}>+ Order</button></div>)}{!data.addresses.some((address) => !address.isOwner) && <div className="empty-list">No customer addresses yet. Add an order from the map to register one.</div>}</section>}
+        {activeTab === "addresses" && <section className="settings-overlay address-book"><div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses</h2></div><button className="primary-button" onClick={beginOrder}>+ Register on map</button></div><div className="address-transfer"><div><strong>Move saved addresses</strong><small>Export from localhost, then import the same file on GitHub Pages.</small></div><div><button onClick={exportAddresses} disabled={!data.addresses.length}>Export</button><button onClick={() => addressImportRef.current?.click()}>Import</button><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importAddresses(file); }} /></div>{addressTransferMessage && <p>{addressTransferMessage}</p>}</div>{owner && <button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}{data.addresses.filter((address) => !address.isOwner).map((address) => <div className="address-book-row" key={address.id}><button className="address-main" onClick={() => { setSelectedAddressId(address.id); setSelectedOrderId(null); setActiveTab("map"); }}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order) => order.addressId === address.id).length} order(s)</small></div></button><button className="address-add" onClick={() => beginOrderForAddress(address)}>+ Order</button></div>)}{!data.addresses.some((address) => !address.isOwner) && <div className="empty-list">No customer addresses yet. Import your localhost addresses above or register a new one on the map.</div>}</section>}
         {activeTab === "products" && <section className="settings-overlay product-manager"><div className="address-book-title"><div><p className="eyebrow">Menu catalog</p><h2>Products</h2></div></div><div className="product-form"><label>Product name<input value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="e.g. Mango Graham Tub" /></label><label>Price<input type="number" min="0" step="0.01" value={productPrice} onChange={(event) => setProductPrice(event.target.value)} placeholder="0.00" /></label><button className="primary-button" disabled={!productName.trim() || productPrice === ""} onClick={addProduct}>Add product</button></div><div className="product-list">{products.map((product) => <article key={product.id} className={!product.active ? "inactive" : ""}><div><strong>{product.name}</strong><small>₱{product.price.toFixed(2)}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active ? "Available" : "Hidden"}</button></article>)}{!products.length && <div className="empty-list">No products yet. Add your desserts here for faster order entry.</div>}</div></section>}
       </section>
       <nav className="bottom-nav" aria-label="Main navigation">

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sweet-route-v4";
+const CACHE_VERSION = "sweet-route-v5";
 const APP_SHELL = ["./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./subdivision-map.png"];
 
 self.addEventListener("install", (event) => {
