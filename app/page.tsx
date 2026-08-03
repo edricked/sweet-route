@@ -337,7 +337,6 @@ export default function Home() {
 
   return (
     <main className="delivery-app">
-      {isHydrated && !owner && entryMode !== "owner" && <div className="home-setup-gate" role="dialog" aria-modal="true" aria-labelledby="home-setup-title"><div><span>⌂</span><p className="eyebrow">One-time setup</p><h2 id="home-setup-title">Set your home location</h2><p>Sweet Route needs your starting point before it can plan deliveries. Tap your home lot on the map, then enter its Phase, Block, and Lot.</p><button className="primary-button" onClick={beginOwnerSetup}>Set home on map</button></div></div>}
       <header className="app-header">
         <div className="brand-mark">
           {/* Static brand artwork is intentionally rendered without image optimization. */}
@@ -411,7 +410,7 @@ export default function Home() {
           </div>
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
           <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
-          <button className="map-add-button" onClick={beginOrder}>+ New order</button>
+          {isHydrated && (owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
         </section>
 
         <aside className={`entry-panel ${!owner && !pendingPoint ? "owner-required" : ""}`}>
