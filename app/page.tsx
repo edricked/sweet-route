@@ -246,10 +246,16 @@ export default function Home() {
     const viewport = mapViewportRef.current;
     const surface = mapRef.current;
     if (!viewport || !surface) return;
-    const minX = Math.min(0, viewport.clientWidth - surface.offsetWidth);
-    const minY = Math.min(0, viewport.clientHeight - surface.offsetHeight);
-    const nextX = surface.offsetWidth <= viewport.clientWidth ? (viewport.clientWidth - surface.offsetWidth) / 2 : Math.min(0, Math.max(minX, x));
-    const nextY = surface.offsetHeight <= viewport.clientHeight ? (viewport.clientHeight - surface.offsetHeight) / 2 : Math.min(0, Math.max(minY, y));
+    const paddingX = Math.min(90, viewport.clientWidth * .18);
+    const paddingY = Math.min(110, viewport.clientHeight * .14);
+    const centeredX = (viewport.clientWidth - surface.offsetWidth) / 2;
+    const centeredY = (viewport.clientHeight - surface.offsetHeight) / 2;
+    const minX = Math.min(centeredX, viewport.clientWidth - surface.offsetWidth) - paddingX;
+    const maxX = Math.max(centeredX, 0) + paddingX;
+    const minY = Math.min(centeredY, viewport.clientHeight - surface.offsetHeight) - paddingY;
+    const maxY = Math.max(centeredY, 0) + paddingY;
+    const nextX = Math.min(maxX, Math.max(minX, x));
+    const nextY = Math.min(maxY, Math.max(minY, y));
     mapPanRef.current = { x: nextX, y: nextY };
     surface.style.transform = `translate3d(${nextX}px, ${nextY}px, 0)`;
   }
@@ -411,7 +417,7 @@ export default function Home() {
     if (window.innerWidth <= 720 && mapViewportRef.current) {
       const viewport = mapViewportRef.current;
       const imageHeightAtWidth = viewport.clientWidth * image.naturalHeight / image.naturalWidth;
-      const coverZoom = Math.max(1, viewport.clientHeight / imageHeightAtWidth);
+      const coverZoom = Math.max(1, viewport.clientHeight / imageHeightAtWidth) * 1.08;
       setMinimumZoom(coverZoom);
       setZoom((current) => Math.max(current, coverZoom));
     }
