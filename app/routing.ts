@@ -5,7 +5,9 @@ const MAP_WIDTH = 2100, MAP_HEIGHT = 1600;
 // Dark waterfront/encroachment artwork can resemble asphalt. These normalized
 // regions are known non-roads and must never be included in delivery paths.
 const ROAD_EXCLUSIONS = [
-  { left:.465, top:.80, right:.555, bottom:.885 },
+  // Waterfront encroachment/greenbelt below the Phase 1 blocks. The dark
+  // printed fill is not a drivable road, even though it matches road colors.
+  { left:.325, top:.755, right:.575, bottom:.89 },
 ];
 
 function distance(a: Point, b: Point) { return Math.hypot((a.x-b.x)*MAP_WIDTH, (a.y-b.y)*MAP_HEIGHT); }
