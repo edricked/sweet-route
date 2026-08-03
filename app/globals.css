@@ -117,5 +117,6 @@ button:disabled { cursor:not-allowed; opacity:.5; }
   .view-map .layers-button { position:fixed; z-index:31; top:11px; right:11px; }.view-map .layers-popover { position:fixed; z-index:32; top:55px; right:11px; }
   .view-map .map-action-stack { position:fixed; z-index:35; right:12px; bottom:calc(132px + env(safe-area-inset-bottom)); display:grid; gap:7px; }.view-map .map-action-stack button { width:42px; height:42px; border:1px solid #d8e3db; border-radius:13px; color:#244734; background:#fffffff2; box-shadow:0 7px 20px rgba(18,45,29,.2); font-size:18px; font-weight:850; backdrop-filter:blur(10px); }.view-map .map-add-button { position:fixed; z-index:35; right:12px; bottom:calc(80px + env(safe-area-inset-bottom)); display:inline-flex; align-items:center; justify-content:center; min-height:43px; padding:0 15px; border:0; border-radius:14px; color:#fff; background:var(--brand); box-shadow:0 8px 22px rgba(23,107,69,.34); font-size:12px; font-weight:900; }
   .view-map .map-home-button { background:#0f5536; }
+  .view-map .map-surface { margin-right:82px; margin-bottom:190px; }
   .view-map>.entry-panel { bottom:calc(80px + env(safe-area-inset-bottom)); max-height:calc(100dvh - 100px - env(safe-area-inset-bottom)); }.view-map>.entry-panel:has(.entry-form) { max-height:calc(100dvh - 100px - env(safe-area-inset-bottom)); }.view-map .map-hint { display:none; }
 }
