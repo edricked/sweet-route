@@ -52,6 +52,40 @@ export default function Home() {
   }, [zoom]);
 
   useEffect(() => {
+    const viewport = mapViewportRef.current;
+    if (!viewport) return;
+    let touchStart: { x: number; y: number; panX: number; panY: number; moved: boolean } | null = null;
+    const start = (event: TouchEvent) => {
+      if ((event.target as HTMLElement).closest("button") || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      touchStart = { x: touch.clientX, y: touch.clientY, panX: mapPanRef.current.x, panY: mapPanRef.current.y, moved: false };
+    };
+    const move = (event: TouchEvent) => {
+      if (!touchStart || event.touches.length !== 1) return;
+      const touch = event.touches[0];
+      const dx = touch.clientX - touchStart.x, dy = touch.clientY - touchStart.y;
+      if (Math.hypot(dx, dy) > 4) { touchStart.moved = true; didDragMapRef.current = true; }
+      if (!touchStart.moved) return;
+      event.preventDefault();
+      applyMapPan(touchStart.panX + dx, touchStart.panY + dy);
+    };
+    const end = () => {
+      touchStart = null;
+      window.setTimeout(() => { didDragMapRef.current = false; }, 0);
+    };
+    viewport.addEventListener("touchstart", start, { passive: true });
+    viewport.addEventListener("touchmove", move, { passive: false });
+    viewport.addEventListener("touchend", end, { passive: true });
+    viewport.addEventListener("touchcancel", end, { passive: true });
+    return () => {
+      viewport.removeEventListener("touchstart", start);
+      viewport.removeEventListener("touchmove", move);
+      viewport.removeEventListener("touchend", end);
+      viewport.removeEventListener("touchcancel", end);
+    };
+  }, []);
+
+  useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
     // before this component mounts and attaches onLoad -- in that case the
     // "load" event never fires at all, and roadMask would silently stay null
@@ -205,31 +239,6 @@ export default function Home() {
     if (!drag || drag.pointerId !== event.pointerId) return;
     mapDragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    window.setTimeout(() => { didDragMapRef.current = false; }, 0);
-  }
-
-  function startMapTouch(event: React.TouchEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest("button")) return;
-    const touch = event.touches[0];
-    if (!touch) return;
-    mapDragRef.current = { pointerId: -1, x: touch.clientX, y: touch.clientY, panX: mapPanRef.current.x, panY: mapPanRef.current.y, moved: false };
-  }
-
-  function moveMapTouch(event: React.TouchEvent<HTMLDivElement>) {
-    const drag = mapDragRef.current;
-    const touch = event.touches[0];
-    if (!drag || drag.pointerId !== -1 || !touch) return;
-    const dx = touch.clientX - drag.x, dy = touch.clientY - drag.y;
-    if (Math.hypot(dx, dy) > 5) { drag.moved = true; didDragMapRef.current = true; }
-    if (drag.moved) {
-      event.preventDefault();
-      applyMapPan(drag.panX + dx, drag.panY + dy);
-    }
-  }
-
-  function endMapTouch() {
-    if (mapDragRef.current?.pointerId !== -1) return;
-    mapDragRef.current = null;
     window.setTimeout(() => { didDragMapRef.current = false; }, 0);
   }
 
@@ -465,7 +474,7 @@ export default function Home() {
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
           {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label></div>}
-          <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick} onPointerDown={startMapDrag} onPointerMove={moveMapDrag} onPointerUp={endMapDrag} onPointerCancel={endMapDrag} onTouchStart={startMapTouch} onTouchMove={moveMapTouch} onTouchEnd={endMapTouch} onTouchCancel={endMapTouch}>
+          <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick} onPointerDown={startMapDrag} onPointerMove={moveMapDrag} onPointerUp={endMapDrag} onPointerCancel={endMapDrag}>
             <div ref={mapRef} className="map-surface" style={{ width: `${zoom * 100}%` }}>
               {/* A native image is required because routing samples its pixels through canvas. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
