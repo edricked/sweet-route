@@ -180,6 +180,7 @@ export default function Home() {
   }
 
   function startMapDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
     if ((event.target as HTMLElement).closest("button")) return;
     const viewport = event.currentTarget;
     mapDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: mapPanRef.current.x, panY: mapPanRef.current.y, moved: false };
@@ -187,6 +188,7 @@ export default function Home() {
   }
 
   function moveMapDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
     const drag = mapDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
@@ -198,10 +200,36 @@ export default function Home() {
   }
 
   function endMapDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
     const drag = mapDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     mapDragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    window.setTimeout(() => { didDragMapRef.current = false; }, 0);
+  }
+
+  function startMapTouch(event: React.TouchEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    mapDragRef.current = { pointerId: -1, x: touch.clientX, y: touch.clientY, panX: mapPanRef.current.x, panY: mapPanRef.current.y, moved: false };
+  }
+
+  function moveMapTouch(event: React.TouchEvent<HTMLDivElement>) {
+    const drag = mapDragRef.current;
+    const touch = event.touches[0];
+    if (!drag || drag.pointerId !== -1 || !touch) return;
+    const dx = touch.clientX - drag.x, dy = touch.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 5) { drag.moved = true; didDragMapRef.current = true; }
+    if (drag.moved) {
+      event.preventDefault();
+      applyMapPan(drag.panX + dx, drag.panY + dy);
+    }
+  }
+
+  function endMapTouch() {
+    if (mapDragRef.current?.pointerId !== -1) return;
+    mapDragRef.current = null;
     window.setTimeout(() => { didDragMapRef.current = false; }, 0);
   }
 
@@ -436,7 +464,7 @@ export default function Home() {
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
           {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label></div>}
-          <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick} onPointerDown={startMapDrag} onPointerMove={moveMapDrag} onPointerUp={endMapDrag} onPointerCancel={endMapDrag}>
+          <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick} onPointerDown={startMapDrag} onPointerMove={moveMapDrag} onPointerUp={endMapDrag} onPointerCancel={endMapDrag} onTouchStart={startMapTouch} onTouchMove={moveMapTouch} onTouchEnd={endMapTouch} onTouchCancel={endMapTouch}>
             <div ref={mapRef} className="map-surface" style={{ width: `${zoom * 100}%` }}>
               {/* A native image is required because routing samples its pixels through canvas. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -462,7 +490,7 @@ export default function Home() {
           <button className="map-add-button" onClick={beginOrder}>+ New order</button>
         </section>
 
-        <aside className="entry-panel">
+        <aside className={`entry-panel ${!owner && !pendingPoint ? "owner-required" : ""}`}>
           {pendingPoint ? <>
             <div className="panel-title"><div><p>{entryMode === "owner" ? "Owner setup" : "New order"}</p><h2>{entryMode === "owner" ? "Save delivery home" : "Save customer location"}</h2></div><button className="close-button" onClick={resetForm}>×</button></div>
             <div className="entry-form">

@@ -61,7 +61,7 @@ export function useLocalAppData() {
           // Retry on the next load; never mark an incomplete migration as finished.
         }
       }
-      if (BASE_PATH && !localStorage.getItem(SEEDED_OWNER_CORRECTION_KEY)) {
+      if (!localStorage.getItem(SEEDED_OWNER_CORRECTION_KEY)) {
         restored = {
           ...restored,
           addresses: restored.addresses.filter((address) => address.id !== SEEDED_OWNER_ID),
