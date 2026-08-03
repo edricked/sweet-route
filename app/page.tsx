@@ -394,9 +394,9 @@ export default function Home() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img ref={imgRef} src={`${BASE_PATH}/subdivision-map.png`} alt="PHirst Park Homes subdivision map" draggable={false} onLoad={(event) => prepareMap(event.currentTarget)} />
               {routePaths.length > 0 && (
-                <svg className="route-layer" viewBox="0 0 1 1" preserveAspectRatio="none" aria-label="Suggested delivery route">
+                <svg className="route-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Suggested delivery route">
                   {routePaths.map((path, index) => (
-                    <polyline key={index} points={path.map((point) => `${point.x},${point.y}`).join(" ")} />
+                    <polyline key={index} points={path.map((point) => `${point.x * 2100},${point.y * 1600}`).join(" ")} />
                   ))}
                 </svg>
               )}
