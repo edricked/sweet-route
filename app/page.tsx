@@ -174,6 +174,7 @@ export default function Home() {
   }
 
   function startMapDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
     if ((event.target as HTMLElement).closest("button")) return;
     const viewport = event.currentTarget;
     mapDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: viewport.scrollLeft, top: viewport.scrollTop, moved: false };
@@ -181,6 +182,7 @@ export default function Home() {
   }
 
   function moveMapDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
     const drag = mapDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
@@ -193,6 +195,7 @@ export default function Home() {
   }
 
   function endMapDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch") return;
     const drag = mapDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     mapDragRef.current = null;
