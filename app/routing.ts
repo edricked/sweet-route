@@ -2,6 +2,11 @@ import { Point } from "./domain";
 
 export type RoadMask = { width: number; height: number; walkable: Uint8Array };
 const MAP_WIDTH = 2100, MAP_HEIGHT = 1600;
+// Dark waterfront/encroachment artwork can resemble asphalt. These normalized
+// regions are known non-roads and must never be included in delivery paths.
+const ROAD_EXCLUSIONS = [
+  { left:.465, top:.80, right:.555, bottom:.885 },
+];
 
 function distance(a: Point, b: Point) { return Math.hypot((a.x-b.x)*MAP_WIDTH, (a.y-b.y)*MAP_HEIGHT); }
 function dilate(mask: Uint8Array, width: number, height: number, radius: number) {
@@ -34,7 +39,13 @@ export function createRoadMask(image: HTMLImageElement): RoadMask {
   for(let i=0;i<raw.length;i++){const o=i*4,r=pixels[o],g=pixels[o+1],b=pixels[o+2]; if(r<75&&g<75&&b<75&&Math.max(r,g,b)-Math.min(r,g,b)<18) raw[i]=1;}
   const broadDarkAreas=open(close(raw,width,height,2),width,height,2);
   const connectedRoads=largestComponent(broadDarkAreas,width,height);
-  return {width,height,walkable:close(connectedRoads,width,height,2)};
+  const walkable=close(connectedRoads,width,height,2);
+  for(const exclusion of ROAD_EXCLUSIONS){
+    const left=Math.floor(exclusion.left*width),right=Math.ceil(exclusion.right*width);
+    const top=Math.floor(exclusion.top*height),bottom=Math.ceil(exclusion.bottom*height);
+    for(let y=top;y<bottom;y++)for(let x=left;x<right;x++)walkable[y*width+x]=0;
+  }
+  return {width,height,walkable};
 }
 
 export function roadPath(from: Point,to: Point,mask: RoadMask): Point[] {
