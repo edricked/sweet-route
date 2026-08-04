@@ -5,6 +5,8 @@ import { Address, AppTab, DeliveryStatus, Order, Product, STATUS_LABEL as status
 import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
 import { AddressDetails, OrderDetails } from "./order-details";
+import { hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath } from "./road-network";
+import { useRoadNetwork } from "./use-road-network";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -14,6 +16,7 @@ export default function Home() {
   const imgRef = useRef<HTMLImageElement>(null);
   const addressImportRef = useRef<HTMLInputElement>(null);
   const [data, setData, isHydrated] = useLocalAppData();
+  const [roadNetwork,setRoadNetwork]=useRoadNetwork();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
   const [entryMode, setEntryMode] = useState<"order" | "owner">("order");
   const [phase, setPhase] = useState<1 | 2>(1);
@@ -42,6 +45,8 @@ export default function Home() {
   const [showLayers, setShowLayers] = useState(false);
   const [showAllAddresses, setShowAllAddresses] = useState(true);
   const [addressTransferMessage, setAddressTransferMessage] = useState("");
+  const [editingRoads,setEditingRoads]=useState(false);
+  const [activeRoadPathId,setActiveRoadPathId]=useState<string|null>(null);
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -70,6 +75,8 @@ export default function Home() {
         .includes(query);
     });
   }, [data.addresses, data.orders, filter, search]);
+  const graphReady=hasRoadNetwork(roadNetwork);
+  const deliveryDistance=(from:Address,to:Address)=>graphReady?roadNetworkDistance(from,to,roadNetwork):roadOrStraightDistance(from,to,roadMask);
   const suggestedRoute = useMemo(() => {
     if (!routeStart) return [];
     const candidates = [...new Map(data.orders
@@ -82,16 +89,18 @@ export default function Home() {
     const remaining = [...candidates];
     while (remaining.length) {
       let bestIndex = 0;
-      let bestDist = roadOrStraightDistance(current, remaining[0], roadMask);
+      let bestDist = deliveryDistance(current, remaining[0]);
       for (let index = 1; index < remaining.length; index += 1) {
-        const d = roadOrStraightDistance(current, remaining[index], roadMask);
+        const d = deliveryDistance(current, remaining[index]);
         if (d < bestDist) { bestDist = d; bestIndex = index; }
       }
       current = remaining.splice(bestIndex, 1)[0];
       ordered.push(current);
     }
     return ordered;
-  }, [data.addresses, data.orders, routeStart, roadMask]);
+  // deliveryDistance is intentionally derived from these routing inputs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.addresses, data.orders, routeStart, roadMask,roadNetwork,graphReady]);
   const manuallyPlannedRoute = routeAddressIds
     .map((id) => data.addresses.find((address) => address.id === id))
     .filter((address): address is Address => Boolean(address))
@@ -100,16 +109,16 @@ export default function Home() {
   const routeKey = `${routeStart?.id ?? ""}:${routeAddresses.map((address) => address.id).join(",")}`;
 
   const routePaths = useMemo(() => {
-    if (!roadMask || !routeStart || !routeAddresses.length) return [];
+    if ((!roadMask&&!graphReady) || !routeStart || !routeAddresses.length) return [];
     let current = routeStart;
     return routeAddresses.map((address) => {
-      const path = roadPath(current, address, roadMask);
+      const path = graphReady?roadNetworkPath(current,address,roadNetwork):roadPath(current,address,roadMask!);
       current = address;
       return path;
     }).filter((path) => path.length > 1);
   // routeKey is the stable semantic dependency for the selected route.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roadMask, routeKey]);
+  }, [roadMask, routeKey,roadNetwork,graphReady]);
 
   function resetForm() {
     setPendingPoint(null);
@@ -162,13 +171,31 @@ export default function Home() {
     if ((event.target as HTMLElement).closest("button")) return;
     if (!mapRef.current) return;
     const rect = mapRef.current.getBoundingClientRect();
-    setPendingPoint({
+    const point={
       x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
       y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
-    });
+    };
+    if(editingRoads){
+      setRoadNetwork((current)=>{
+        const snapped=nearestRoadPoint(point,current);
+        const pathId=activeRoadPathId??makeId("road");
+        if(!activeRoadPathId)setActiveRoadPathId(pathId);
+        const existing=current.paths.find((path)=>path.id===pathId);
+        return {...current,paths:existing?current.paths.map((path)=>path.id===pathId?{...path,points:[...path.points,snapped]}:path):[...current.paths,{id:pathId,points:[snapped]}]};
+      });
+      return;
+    }
+    setPendingPoint(point);
     setSelectedOrderId(null);
     setSelectedAddressId(null);
   }
+
+  function undoRoadPoint(){
+    if(!activeRoadPathId)return;
+    setRoadNetwork((current)=>({...current,paths:current.paths.flatMap((path)=>path.id!==activeRoadPathId?[path]:path.points.length>1?[{...path,points:path.points.slice(0,-1)}]:[])}));
+  }
+
+  function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setShowLayers(false);}
 
   function saveEntry() {
     const numericLot = Number(lot);
@@ -386,9 +413,9 @@ export default function Home() {
             <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={resetMapView}>Reset</button></div>
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
-          {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label></div>}
+          {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label><button className="road-edit-toggle" onClick={()=>{setEditingRoads(true);setShowLayers(false);setPendingPoint(null);setSelectedAddressId(null);setSelectedOrderId(null);}}>Edit road network</button><small>{graphReady?`${roadNetwork.paths.length} road path${roadNetwork.paths.length===1?"":"s"} saved`:`Not traced yet — image routing is active`}</small></div>}
           <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick}>
-            <div ref={mapRef} className="map-surface" style={{ width: `${zoom * 100}%` }}>
+            <div ref={mapRef} className={`map-surface ${editingRoads?"editing-roads":""}`} style={{ width: `${zoom * 100}%` }}>
               {/* A native image is required because routing samples its pixels through canvas. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img ref={imgRef} src={`${BASE_PATH}/subdivision-map.png`} alt="PHirst Park Homes subdivision map" draggable={false} onLoad={(event) => prepareMap(event.currentTarget)} />
@@ -399,6 +426,7 @@ export default function Home() {
                   ))}
                 </svg>
               )}
+              {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>{path.points.map((point,index)=><circle key={index} cx={point.x*2100} cy={point.y*1600} r="9"/>)}</g>)}</svg>}
               {data.addresses.filter((address) => showAllAddresses || address.isOwner || data.orders.some((order) => order.addressId === address.id && !["delivered", "cancelled"].includes(order.status))).map((address) => (
                 <button key={address.id} className={`address-pin ${address.isOwner ? "owner" : ""} ${selectedAddressId === address.id ? "selected" : ""}`} style={{ left: `${address.x * 100}%`, top: `${address.y * 100}%` }} title={addressLabel(address)} onClick={(event) => { event.stopPropagation(); setSelectedAddressId(address.id); }}>
                   {address.isOwner ? "⌂" : "●"}
@@ -410,7 +438,7 @@ export default function Home() {
           </div>
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
           <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
-          {isHydrated && (owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
+          {editingRoads?<div className="road-editor-toolbar"><div><strong>Trace road centers</strong><small>Tap along a road. Add points at every turn and intersection.</small></div><button disabled={!activeRoadPathId} onClick={undoRoadPoint}>Undo</button><button onClick={()=>setActiveRoadPathId(null)}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){setRoadNetwork({version:1,paths:[]});setActiveRoadPathId(null);}}}>Clear</button></div>:isHydrated && (owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
         </section>
 
         <aside className={`entry-panel ${!owner && !pendingPoint ? "owner-required" : ""}`}>
