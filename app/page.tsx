@@ -5,7 +5,7 @@ import { Address, AppData, AppTab, DeliveryStatus, Order, OrderLine, Product, ST
 import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
 import { AddressDetails, OrderDetails } from "./order-details";
-import { hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath } from "./road-network";
+import { hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
 import { useRoadNetwork } from "./use-road-network";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
@@ -56,6 +56,7 @@ export default function Home() {
   const [addressPrefilled,setAddressPrefilled]=useState(false);
   const [editingRoads,setEditingRoads]=useState(false);
   const [activeRoadPathId,setActiveRoadPathId]=useState<string|null>(null);
+  const [showRoadValidation,setShowRoadValidation]=useState(false);
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -90,6 +91,11 @@ export default function Home() {
   // Traced roads remain a draft until a future validation/publish workflow
   // explicitly activates them. Deliveries continue using image-based routing.
   const graphReady=roadNetwork.active===true&&hasRoadNetwork(roadNetwork);
+  const roadValidation=useMemo(()=>validateRoadNetwork(
+    roadNetwork,
+    owner,
+    data.addresses.filter((address)=>!address.isOwner),
+  ),[roadNetwork,owner,data.addresses]);
   const deliveryDistance=(from:Address,to:Address)=>graphReady?roadNetworkDistance(from,to,roadNetwork):roadOrStraightDistance(from,to,roadMask);
   const suggestedRoute = useMemo(() => {
     if (!routeStart) return [];
@@ -198,6 +204,7 @@ export default function Home() {
       y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
     };
     if(editingRoads){
+      setShowRoadValidation(false);
       setRoadNetwork((current)=>{
         const snapped=nearestRoadPoint(point,current);
         const pathId=activeRoadPathId??makeId("road");
@@ -214,6 +221,7 @@ export default function Home() {
 
   function undoRoadPoint(){
     if(!activeRoadPathId)return;
+    setShowRoadValidation(false);
     setRoadNetwork((current)=>({...current,paths:current.paths.flatMap((path)=>path.id!==activeRoadPathId?[path]:path.points.length>1?[{...path,points:path.points.slice(0,-1)}]:[])}));
   }
 
@@ -477,7 +485,7 @@ export default function Home() {
             <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={resetMapView}>Reset</button></div>
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
-          {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label><button className="road-edit-toggle" onClick={()=>{setEditingRoads(true);setShowLayers(false);setPendingPoint(null);setSelectedAddressId(null);setSelectedOrderId(null);}}>Edit road draft</button><small>Image routing is active{roadNetwork.paths.length?` · ${roadNetwork.paths.length} draft path${roadNetwork.paths.length===1?"":"s"} saved`:""}</small></div>}
+          {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label><button className="road-edit-toggle" onClick={()=>{setRoadNetwork((current)=>({...current,active:false}));setEditingRoads(true);setShowLayers(false);setShowRoadValidation(false);setPendingPoint(null);setSelectedAddressId(null);setSelectedOrderId(null);}}>Edit road draft</button><button className="road-validate-toggle" disabled={!roadNetwork.paths.length} onClick={()=>setShowRoadValidation(true)}>Validate road network</button>{showRoadValidation&&<div className={`road-validation ${roadValidation.valid?"valid":"invalid"}`}><strong>{roadValidation.valid?"Ready to activate":"Draft needs attention"}</strong><span>{roadValidation.usablePaths} traced path{roadValidation.usablePaths===1?"":"s"} · {roadValidation.components} connected section{roadValidation.components===1?"":"s"}</span>{roadValidation.incompletePaths>0&&<span>{roadValidation.incompletePaths} unfinished path{roadValidation.incompletePaths===1?"":"s"}</span>}{!owner&&<span>Set an owner home first.</span>}{roadValidation.unreachablePoints>0&&<span>{roadValidation.unreachablePoints} address{roadValidation.unreachablePoints===1?" is":"es are"} unreachable from home.</span>}</div>}{roadNetwork.active?<button className="road-deactivate" onClick={()=>setRoadNetwork((current)=>({...current,active:false}))}>Use image routing</button>:<button className="road-activate" disabled={!showRoadValidation||!roadValidation.valid} onClick={()=>setRoadNetwork((current)=>({...current,active:true}))}>Use road draft for routing</button>}<small>{roadNetwork.active?"Traced-road routing is active":`Image routing is active${roadNetwork.paths.length?` · ${roadNetwork.paths.length} draft path${roadNetwork.paths.length===1?"":"s"} saved`:""}`}</small></div>}
           <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick}>
             <div ref={mapRef} className={`map-surface ${editingRoads?"editing-roads":""}`} style={{ width: `${zoom * 100}%` }}>
               {/* A native image is required because routing samples its pixels through canvas. */}

@@ -2,6 +2,13 @@ import { Point } from "./domain";
 
 export type RoadPath = { id: string; points: Point[] };
 export type RoadNetwork = { version: 1; paths: RoadPath[]; active?: boolean };
+export type RoadNetworkValidation = {
+  valid: boolean;
+  usablePaths: number;
+  incompletePaths: number;
+  components: number;
+  unreachablePoints: number;
+};
 
 export const EMPTY_ROAD_NETWORK: RoadNetwork = { version: 1, paths: [], active: false };
 
@@ -35,6 +42,28 @@ function buildGraph(network: RoadNetwork) {
 
 export function hasRoadNetwork(network: RoadNetwork) {
   return network.paths.some((path)=>path.points.length>1);
+}
+
+export function validateRoadNetwork(network: RoadNetwork, anchor: Point | null, destinations: Point[]): RoadNetworkValidation {
+  const usablePaths=network.paths.filter((path)=>path.points.length>1).length;
+  const incompletePaths=network.paths.length-usablePaths;
+  const {nodes,edges}=buildGraph(network);
+  const visited=new Uint8Array(nodes.length);
+  let components=0;
+  for(let start=0;start<nodes.length;start++){
+    if(visited[start])continue;
+    components+=1;
+    const pending=[start];visited[start]=1;
+    while(pending.length){
+      const current=pending.pop()!;
+      for(const edge of edges.get(current)??[])if(!visited[edge.to]){visited[edge.to]=1;pending.push(edge.to);}
+    }
+  }
+  const unreachablePoints=anchor?destinations.filter((point)=>roadNetworkPath(anchor,point,network).length<2).length:destinations.length;
+  return {
+    valid:Boolean(anchor)&&usablePaths>0&&incompletePaths===0&&components===1&&unreachablePoints===0,
+    usablePaths,incompletePaths,components,unreachablePoints,
+  };
 }
 
 export function nearestRoadPoint(point: Point, network: RoadNetwork, maxDistance=18) {
