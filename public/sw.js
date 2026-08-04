@@ -1,4 +1,4 @@
-const CACHE_VERSION = "sweet-route-v26";
+const CACHE_VERSION = "sweet-route-v27";
 const APP_SHELL = ["./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./subdivision-map.png", "./initial-addresses.json"];
 
 self.addEventListener("install", (event) => {
@@ -7,10 +7,11 @@ self.addEventListener("install", (event) => {
       .then((cache) => Promise.all(APP_SHELL.map(async (url) => {
         const response = await fetch(new Request(url, { cache: "reload" }));
         if (response.ok) await cache.put(url, response);
-      })))
-      .then(() => self.skipWaiting()),
+      }))),
   );
 });
+
+self.addEventListener("message",(event)=>{if(event.data?.type==="SKIP_WAITING")self.skipWaiting();});
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(

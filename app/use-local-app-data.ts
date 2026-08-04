@@ -22,7 +22,12 @@ export function useLocalAppData() {
       try {
         const parsed = JSON.parse(saved) as Partial<AppData>;
         if (Array.isArray(parsed.addresses) && Array.isArray(parsed.orders)) {
-          const parsedOrders = parsed.orders;
+          const parsedOrders = parsed.orders.map((order) => ({
+            ...order,
+            paymentStatus: order.paymentStatus === "paid" ? "paid" as const : "unpaid" as const,
+            total: Number.isFinite(order.total) ? order.total : 0,
+            lineItems: Array.isArray(order.lineItems) ? order.lineItems : [],
+          }));
           const clearOrders = new URLSearchParams(window.location.search).get("clearOrders") === "1";
           const restoredOrders = clearOrders ? [] : parsedOrders;
           const restoredAddresses = parsed.addresses.map((address) => {

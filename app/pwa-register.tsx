@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export function PwaRegister() {
+  const [waitingWorker,setWaitingWorker]=useState<ServiceWorker|null>(null);
   useEffect(() => {
     const preventPageZoom = (event: Event) => event.preventDefault();
     document.addEventListener("gesturestart", preventPageZoom, { passive: false });
@@ -24,6 +25,11 @@ export function PwaRegister() {
     const register = async () => {
       try {
         registration = await navigator.serviceWorker.register("./sw.js", { scope: "./", updateViaCache: "none" });
+        if(registration.waiting&&navigator.serviceWorker.controller)setWaitingWorker(registration.waiting);
+        registration.addEventListener("updatefound",()=>{
+          const worker=registration?.installing;if(!worker)return;
+          worker.addEventListener("statechange",()=>{if(worker.state==="installed"&&navigator.serviceWorker.controller)setWaitingWorker(worker);});
+        });
         await registration.update();
       } catch {
         // The current app remains usable offline if an update check fails.
@@ -49,5 +55,6 @@ export function PwaRegister() {
     };
   }, []);
 
-  return null;
+  if(!waitingWorker)return null;
+  return <div className="pwa-update"><div><strong>Sweet Route updated</strong><small>Install the latest fixes without losing local data.</small></div><button onClick={()=>waitingWorker.postMessage({type:"SKIP_WAITING"})}>Update now</button><button className="pwa-update-later" aria-label="Dismiss update" onClick={()=>setWaitingWorker(null)}>×</button></div>;
 }

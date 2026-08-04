@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Address, AppTab, DeliveryStatus, Order, Product, STATUS_LABEL as statusLabel, VALID_BLOCKS, addressLabel, makeId } from "./domain";
+import { Address, AppData, AppTab, DeliveryStatus, Order, OrderLine, Product, STATUS_LABEL as statusLabel, VALID_BLOCKS, addressLabel, makeId } from "./domain";
 import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
 import { AddressDetails, OrderDetails } from "./order-details";
@@ -15,6 +15,9 @@ export default function Home() {
   const mapViewportRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const addressImportRef = useRef<HTMLInputElement>(null);
+  const orderImportRef = useRef<HTMLInputElement>(null);
+  const productImportRef = useRef<HTMLInputElement>(null);
+  const fullImportRef = useRef<HTMLInputElement>(null);
   const [data, setData, isHydrated] = useLocalAppData();
   const [roadNetwork,setRoadNetwork]=useRoadNetwork();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
@@ -25,6 +28,7 @@ export default function Home() {
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [items, setItems] = useState("");
+  const [selectedLines,setSelectedLines]=useState<OrderLine[]>([]);
   const [status, setStatus] = useState<DeliveryStatus>("preparing");
   const [notes, setNotes] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -128,6 +132,7 @@ export default function Home() {
     setCustomerName("");
     setPhone("");
     setItems("");
+    setSelectedLines([]);
     setStatus("preparing");
     setNotes("");
     setSelectedProductId("");
@@ -236,6 +241,9 @@ export default function Home() {
       customerName: customerName.trim(),
       phone: phone.trim(),
       items: items.trim(),
+      lineItems:selectedLines,
+      total:selectedLines.reduce((sum,line)=>sum+line.quantity*line.unitPrice,0),
+      paymentStatus:"unpaid",
       status,
       notes: notes.trim(),
       createdAt: new Date().toISOString(),
@@ -289,6 +297,38 @@ export default function Home() {
     setData((current) => ({ ...current, products: (current.products ?? []).map((product) => product.id === productId ? { ...product, active: !product.active } : product) }));
   }
 
+  function updateAddress(addressId:string,patch:Pick<Address,"phase"|"block"|"lot"|"customerName"|"phone">){
+    const duplicate=data.addresses.some((address)=>address.id!==addressId&&address.phase===patch.phase&&address.block===patch.block&&address.lot===patch.lot);
+    if(duplicate){window.alert("That phase, block, and lot is already registered.");return false;}
+    setData((current)=>({...current,addresses:current.addresses.map((address)=>address.id===addressId?{...address,...patch}:address)}));return true;
+  }
+  function deleteAddress(addressId:string){
+    const orderCount=data.orders.filter((order)=>order.addressId===addressId).length;
+    if(!window.confirm(orderCount?`Delete this address and its ${orderCount} order(s)? This cannot be undone.`:"Delete this address? This cannot be undone."))return;
+    setData((current)=>({...current,addresses:current.addresses.filter((address)=>address.id!==addressId),orders:current.orders.filter((order)=>order.addressId!==addressId),routeStartAddressId:current.routeStartAddressId===addressId?undefined:current.routeStartAddressId}));
+    setSelectedAddressId(null);setSelectedOrderId(null);
+  }
+  function updateOrder(orderId:string,patch:Partial<Pick<Order,"customerName"|"phone"|"items"|"notes"|"paymentStatus">>){setData((current)=>({...current,orders:current.orders.map((order)=>order.id===orderId?{...order,...patch}:order)}));}
+  function deleteOrder(orderId:string){if(!window.confirm("Delete this order? This cannot be undone."))return;setData((current)=>({...current,orders:current.orders.filter((order)=>order.id!==orderId)}));setSelectedOrderId(null);setPendingRouteStartOrderId(null);}
+  function updateProduct(productId:string,patch:Pick<Product,"name"|"price">){setData((current)=>({...current,products:current.products.map((product)=>product.id===productId?{...product,...patch}:product)}));}
+  function deleteProduct(productId:string){if(!window.confirm("Delete this product? Existing orders will keep their saved product details."))return;setData((current)=>({...current,products:current.products.filter((product)=>product.id!==productId)}));}
+
+  function downloadBackup(type:string,value:unknown){const payload=JSON.stringify({type:`sweet-route-${type}`,version:1,exportedAt:new Date().toISOString(),[type]:value},null,2);const url=URL.createObjectURL(new Blob([payload],{type:"application/json"}));const link=document.createElement("a");link.href=url;link.download=`sweet-route-${type}-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(url);setAddressTransferMessage(`${type[0].toUpperCase()+type.slice(1)} backup exported.`);}
+  async function importBackup(file:File,type:"orders"|"products"|"data"){
+    try{
+      const parsed=JSON.parse(await file.text()) as Record<string,unknown>;if(parsed.type!==`sweet-route-${type}`)throw new Error("Wrong backup type");
+      if(type==="data"){
+        const restored=parsed.data as AppData;if(!restored||!Array.isArray(restored.addresses)||!Array.isArray(restored.orders)||!Array.isArray(restored.products))throw new Error("Invalid full backup");
+        if(!window.confirm("Replace all local addresses, orders, and products with this full backup?"))return;
+        setData(restored);setAddressTransferMessage("Full backup restored.");return;
+      }
+      const records=parsed[type];if(!Array.isArray(records))throw new Error("Invalid backup");
+      setData((current)=>{const merged=new Map((current[type] as Array<{id:string}>).map((record)=>[record.id,record]));(records as Array<{id:string}>).filter((record)=>record&&typeof record.id==="string").forEach((record)=>merged.set(record.id,record));return{...current,[type]:[...merged.values()]};});
+      setAddressTransferMessage(`${records.length} ${type} restored; existing records were kept.`);
+    }catch{setAddressTransferMessage(`That file is not a valid Sweet Route ${type} backup.`);}
+    finally{if(orderImportRef.current)orderImportRef.current.value="";if(productImportRef.current)productImportRef.current.value="";if(fullImportRef.current)fullImportRef.current.value="";}
+  }
+
   function exportAddresses() {
     const payload = JSON.stringify({ type: "sweet-route-addresses", version: 1, exportedAt: new Date().toISOString(), addresses: data.addresses }, null, 2);
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
@@ -324,6 +364,7 @@ export default function Home() {
     const quantity = Number(productQuantity);
     if (!product || !Number.isInteger(quantity) || quantity < 1) return;
     const lineItem = `${quantity} × ${product.name}`;
+    setSelectedLines((current)=>[...current,{productId:product.id,name:product.name,quantity,unitPrice:product.price}]);
     setItems((current) => current.trim() ? `${current.trim()}, ${lineItem}` : lineItem);
     setSelectedProductId("");
     setProductQuantity("1");
@@ -398,7 +439,7 @@ export default function Home() {
           <div className="order-list">
             {visibleOrders.map((order) => {
               const address = data.addresses.find((item) => item.id === order.addressId);
-              return <button key={order.id} className={`order-card ${selectedOrderId === order.id ? "selected" : ""}`} onClick={() => { setSelectedOrderId(order.id); setSelectedAddressId(order.addressId); }}>
+              return <button key={order.id} className={`order-card ${selectedOrderId === order.id ? "selected" : ""}`} onClick={() => { setSelectedOrderId(order.id); setSelectedAddressId(order.addressId); setActiveTab("map"); }}>
                 <span className={`status-pill ${order.status}`}>{statusLabel[order.status]}</span>
                 <strong>{order.customerName}</strong>
                 <small>{address ? addressLabel(address) : "Address missing"}</small>
@@ -455,15 +496,15 @@ export default function Home() {
                 <label>Contact<input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Optional" /></label>
                 <label>Status<select value={status} onChange={(event) => setStatus(event.target.value as DeliveryStatus)}>{(["preparing", "ready", "out-for-delivery", "delivered", "cancelled"] as const).map((value) => <option key={value} value={value}>{statusLabel[value]}</option>)}</select></label>
                 {products.some((product) => product.active) && <div className="product-picker full"><label>Product<select value={selectedProductId} onChange={(event) => setSelectedProductId(event.target.value)}><option value="">Choose a product</option>{products.filter((product) => product.active).map((product) => <option key={product.id} value={product.id}>{product.name} — ₱{product.price.toFixed(2)}</option>)}</select></label><label className="quantity-field">Qty<input type="number" inputMode="numeric" min="1" step="1" value={productQuantity} onChange={(event) => setProductQuantity(event.target.value.replace(/\D/g, ""))} /></label><button type="button" disabled={!selectedProductId || Number(productQuantity) < 1} onClick={appendSelectedProduct}>Add</button></div>}
-                {items && <div className="selected-items full"><div><span>Selected products</span><strong>{items}</strong></div><button type="button" onClick={() => setItems("")}>Clear</button></div>}
+                {items && <div className="selected-items full"><div><span>Selected products</span><strong>{items}</strong>{selectedLines.length>0&&<small>Total: ₱{selectedLines.reduce((sum,line)=>sum+line.quantity*line.unitPrice,0).toFixed(2)}</small>}</div><button type="button" onClick={() => {setItems("");setSelectedLines([]);}}>Clear</button></div>}
                 <label className="full">Notes<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Landmark, payment, or special note" /></label>
               </>}
               <button className="primary-button full" disabled={!lot || (entryMode === "order" && (!customerName || !items))} onClick={saveEntry}>{entryMode === "owner" ? "Save owner home" : "Add order and pin"}</button>
             </div>
-          </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : !owner && entryMode === "owner" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap your home lot</strong><small>Drag or zoom the map first.</small></div></div> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
+          </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdate={updateOrder} onDelete={deleteOrder} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} onUpdateAddress={updateAddress} onDeleteAddress={deleteAddress} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : !owner && entryMode === "owner" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap your home lot</strong><small>Drag or zoom the map first.</small></div></div> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
         </aside>
-        {activeTab === "addresses" && <section className="settings-overlay address-book"><div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses</h2></div><button className="primary-button" onClick={beginOrder}>+ Register on map</button></div><div className="address-transfer"><div><strong>Move saved addresses</strong><small>Export from localhost, then import the same file on GitHub Pages.</small></div><div><button onClick={exportAddresses} disabled={!data.addresses.length}>Export</button><button onClick={() => addressImportRef.current?.click()}>Import</button><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importAddresses(file); }} /></div>{addressTransferMessage && <p>{addressTransferMessage}</p>}</div>{owner && <button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}{data.addresses.filter((address) => !address.isOwner).map((address) => <div className="address-book-row" key={address.id}><button className="address-main" onClick={() => { setSelectedAddressId(address.id); setSelectedOrderId(null); setActiveTab("map"); }}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order) => order.addressId === address.id).length} order(s)</small></div></button><button className="address-add" onClick={() => beginOrderForAddress(address)}>+ Order</button></div>)}{!data.addresses.some((address) => !address.isOwner) && <div className="empty-list">No customer addresses yet. Import your localhost addresses above or register a new one on the map.</div>}</section>}
-        {activeTab === "products" && <section className="settings-overlay product-manager"><div className="address-book-title"><div><p className="eyebrow">Menu catalog</p><h2>Products</h2></div></div><div className="product-form"><label>Product name<input value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="e.g. Mango Graham Tub" /></label><label>Price<input type="number" min="0" step="0.01" value={productPrice} onChange={(event) => setProductPrice(event.target.value)} placeholder="0.00" /></label><button className="primary-button" disabled={!productName.trim() || productPrice === ""} onClick={addProduct}>Add product</button></div><div className="product-list">{products.map((product) => <article key={product.id} className={!product.active ? "inactive" : ""}><div><strong>{product.name}</strong><small>₱{product.price.toFixed(2)}</small></div><button onClick={() => toggleProduct(product.id)}>{product.active ? "Available" : "Hidden"}</button></article>)}{!products.length && <div className="empty-list">No products yet. Add your desserts here for faster order entry.</div>}</div></section>}
+        {activeTab === "addresses" && <section className="settings-overlay address-book"><div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses & backups</h2></div><button className="primary-button" onClick={beginOrder}>+ Register on map</button></div><div className="backup-center"><BackupRow title="Addresses" count={data.addresses.length} onExport={exportAddresses} onImport={()=>addressImportRef.current?.click()}/><BackupRow title="Orders" count={data.orders.length} onExport={()=>downloadBackup("orders",data.orders)} onImport={()=>orderImportRef.current?.click()}/><BackupRow title="Products" count={products.length} onExport={()=>downloadBackup("products",products)} onImport={()=>productImportRef.current?.click()}/><BackupRow title="Full app" count={data.addresses.length+data.orders.length+products.length} onExport={()=>downloadBackup("data",data)} onImport={()=>fullImportRef.current?.click()}/><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importAddresses(file);}}/><input ref={orderImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"orders");}}/><input ref={productImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"products");}}/><input ref={fullImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"data");}}/>{addressTransferMessage&&<p>{addressTransferMessage}</p>}</div>{owner && <button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}{data.addresses.filter((address) => !address.isOwner).map((address) => <div className="address-book-row" key={address.id}><button className="address-main" onClick={() => { setSelectedAddressId(address.id); setSelectedOrderId(null); setActiveTab("map"); }}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order) => order.addressId === address.id).length} order(s)</small></div></button><button className="address-add" onClick={() => beginOrderForAddress(address)}>+ Order</button></div>)}{!data.addresses.some((address) => !address.isOwner) && <div className="empty-list">No customer addresses yet. Import a backup or register a new one on the map.</div>}</section>}
+        {activeTab === "products" && <section className="settings-overlay product-manager"><div className="address-book-title"><div><p className="eyebrow">Menu catalog</p><h2>Products</h2></div></div><div className="product-form"><label>Product name<input value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="e.g. Mango Graham Tub" /></label><label>Price<input type="number" min="0" step="0.01" value={productPrice} onChange={(event) => setProductPrice(event.target.value)} placeholder="0.00" /></label><button className="primary-button" disabled={!productName.trim() || productPrice === ""} onClick={addProduct}>Add product</button></div><div className="product-list">{products.map((product)=><ProductRow key={product.id} product={product} onToggle={toggleProduct} onUpdate={updateProduct} onDelete={deleteProduct}/>)}{!products.length && <div className="empty-list">No products yet. Add your desserts here for faster order entry.</div>}</div></section>}
       </section>
       <nav className="bottom-nav" aria-label="Main navigation">
         {(["today", "map", "orders", "products", "addresses"] as AppTab[]).map((tab) => <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}><span>{tab === "today" ? "⌂" : tab === "map" ? "⌖" : tab === "orders" ? "▤" : tab === "products" ? "◇" : "◆"}</span>{tab[0].toUpperCase() + tab.slice(1)}</button>)}
@@ -471,3 +512,7 @@ export default function Home() {
     </main>
   );
 }
+
+function BackupRow({title,count,onExport,onImport}:{title:string;count:number;onExport:()=>void;onImport:()=>void}){return <div className="backup-row"><div><strong>{title}</strong><small>{count} record{count===1?"":"s"}</small></div><div><button disabled={!count} onClick={onExport}>Export</button><button onClick={onImport}>Restore</button></div></div>;}
+
+function ProductRow({product,onToggle,onUpdate,onDelete}:{product:Product;onToggle:(id:string)=>void;onUpdate:(id:string,patch:Pick<Product,"name"|"price">)=>void;onDelete:(id:string)=>void}){const [editing,setEditing]=useState(false),[name,setName]=useState(product.name),[price,setPrice]=useState(String(product.price));return <article className={!product.active?"inactive":""}>{editing?<div className="product-inline-edit"><input aria-label="Product name" value={name} onChange={(event)=>setName(event.target.value)}/><input aria-label="Product price" type="number" min="0" step=".01" value={price} onChange={(event)=>setPrice(event.target.value)}/><button onClick={()=>setEditing(false)}>Cancel</button><button disabled={!name.trim()||!Number.isFinite(Number(price))||Number(price)<0} onClick={()=>{onUpdate(product.id,{name:name.trim(),price:Number(price)});setEditing(false);}}>Save</button></div>:<><div><strong>{product.name}</strong><small>₱{product.price.toFixed(2)}</small></div><div className="product-actions"><button onClick={()=>onToggle(product.id)}>{product.active?"Available":"Hidden"}</button><button onClick={()=>setEditing(true)}>Edit</button><button className="danger" onClick={()=>onDelete(product.id)}>Delete</button></div></>}</article>;}

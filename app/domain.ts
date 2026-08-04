@@ -11,9 +11,11 @@ export type Address = {
 export type Order = {
   id: string; addressId: string; customerName: string; phone: string;
   items: string; status: DeliveryStatus; notes: string; createdAt: string;
+  lineItems?: OrderLine[]; total?: number; paymentStatus?: "unpaid" | "paid";
 };
 
 export type Product = { id: string; name: string; price: number; active: boolean; createdAt: string };
+export type OrderLine = { productId?: string; name: string; quantity: number; unitPrice: number };
 export type AppData = {
   addresses: Address[];
   orders: Order[];
