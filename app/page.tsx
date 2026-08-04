@@ -21,7 +21,7 @@ export default function Home() {
   const [data, setData, isHydrated] = useLocalAppData();
   const [roadNetwork,setRoadNetwork]=useRoadNetwork();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
-  const [entryMode, setEntryMode] = useState<"order" | "owner">("order");
+  const [entryMode, setEntryMode] = useState<"order" | "owner" | "address">("order");
   const [phase, setPhase] = useState<1 | 2>(1);
   const [block, setBlock] = useState(3);
   const [lot, setLot] = useState("");
@@ -49,6 +49,10 @@ export default function Home() {
   const [showLayers, setShowLayers] = useState(false);
   const [showAllAddresses, setShowAllAddresses] = useState(true);
   const [addressTransferMessage, setAddressTransferMessage] = useState("");
+  const [addressSearchPhase,setAddressSearchPhase]=useState<1|2>(1);
+  const [addressSearchBlock,setAddressSearchBlock]=useState(3);
+  const [addressSearchLot,setAddressSearchLot]=useState("");
+  const [addressPrefilled,setAddressPrefilled]=useState(false);
   const [editingRoads,setEditingRoads]=useState(false);
   const [activeRoadPathId,setActiveRoadPathId]=useState<string|null>(null);
 
@@ -67,6 +71,9 @@ export default function Home() {
   const products = data.products ?? [];
   const selectedOrder = data.orders.find((order) => order.id === selectedOrderId) ?? null;
   const selectedAddress = data.addresses.find((address) => address.id === selectedAddressId) ?? null;
+  const searchedLot=Number(addressSearchLot);
+  const addressSearchActive=Number.isInteger(searchedLot)&&searchedLot>0;
+  const addressMatches=data.addresses.filter((address)=>!address.isOwner&&(!addressSearchActive||(address.phase===addressSearchPhase&&address.block===addressSearchBlock&&address.lot===searchedLot)));
   const visibleOrders = useMemo(() => {
     const query = search.trim().toLowerCase();
     return data.orders.filter((order) => {
@@ -137,6 +144,7 @@ export default function Home() {
     setNotes("");
     setSelectedProductId("");
     setProductQuantity("1");
+    setAddressPrefilled(false);
   }
 
   function beginOwnerSetup() {
@@ -153,6 +161,12 @@ export default function Home() {
     setSelectedOrderId(null);
     setSelectedAddressId(null);
     resetForm();
+  }
+
+  function beginAddressRegistration(prefill?:{phase:1|2;block:number;lot:number}){
+    setActiveTab("map");setEntryMode("address");setSelectedOrderId(null);setSelectedAddressId(null);resetForm();
+    setAddressPrefilled(Boolean(prefill));
+    if(prefill){setPhase(prefill.phase);setBlock(prefill.block);setLot(String(prefill.lot));}
   }
 
   function beginOrderForAddress(address: Address) {
@@ -232,6 +246,12 @@ export default function Home() {
       setSelectedAddressId(address.id);
       resetForm();
       return;
+    }
+
+    if(entryMode==="address"){
+      const savedAddress={...address,x:pendingPoint.x,y:pendingPoint.y,customerName:customerName.trim()||address.customerName,phone:phone.trim()||address.phone};
+      setData((current)=>({...current,addresses:existing?current.addresses.map((item)=>item.id===existing.id?savedAddress:item):[...current.addresses,savedAddress]}));
+      setSelectedAddressId(savedAddress.id);setEntryMode("order");resetForm();return;
     }
 
     if (!customerName.trim() || !items.trim()) return;
@@ -481,12 +501,12 @@ export default function Home() {
           </div>
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
           <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
-          {editingRoads?<div className="road-editor-toolbar"><div><strong>Trace road centers</strong><small>Saved as a draft. Current delivery routing will not change.</small></div><button disabled={!activeRoadPathId} onClick={undoRoadPoint}>Undo</button><button onClick={()=>setActiveRoadPathId(null)}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){setRoadNetwork({version:1,paths:[],active:false});setActiveRoadPathId(null);}}}>Clear</button></div>:isHydrated && (owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
+          {editingRoads?<div className="road-editor-toolbar"><div><strong>Trace road centers</strong><small>Saved as a draft. Current delivery routing will not change.</small></div><button disabled={!activeRoadPathId} onClick={undoRoadPoint}>Undo</button><button onClick={()=>setActiveRoadPathId(null)}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){setRoadNetwork({version:1,paths:[],active:false});setActiveRoadPathId(null);}}}>Clear</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
         </section>
 
         <aside className={`entry-panel ${!owner && !pendingPoint ? "owner-required" : ""}`}>
           {pendingPoint ? <>
-            <div className="panel-title"><div><p>{entryMode === "owner" ? "Owner setup" : "New order"}</p><h2>{entryMode === "owner" ? "Save delivery home" : "Save customer location"}</h2></div><button className="close-button" onClick={resetForm}>×</button></div>
+            <div className="panel-title"><div><p>{entryMode === "owner" ? "Owner setup" : entryMode==="address"?"Address registration":"New order"}</p><h2>{entryMode === "owner" ? "Save delivery home" : entryMode==="address"?"Pin this address":"Save customer location"}</h2></div><button className="close-button" onClick={()=>{resetForm();if(entryMode==="address")setEntryMode("order");}}>×</button></div>
             <div className="entry-form">
               <label>Phase<select value={phase} onChange={(event) => { const nextPhase = Number(event.target.value) as 1 | 2; setPhase(nextPhase); if (!VALID_BLOCKS[nextPhase].includes(block)) setBlock(VALID_BLOCKS[nextPhase][0]); }}><option value={1}>Phase 1</option><option value={2}>Phase 2</option></select></label>
               <label>Block<select value={block} onChange={(event) => setBlock(Number(event.target.value))}>{VALID_BLOCKS[phase].map((value) => <option key={value} value={value}>Block {value}</option>)}</select></label>
@@ -499,11 +519,19 @@ export default function Home() {
                 {items && <div className="selected-items full"><div><span>Selected products</span><strong>{items}</strong>{selectedLines.length>0&&<small>Total: ₱{selectedLines.reduce((sum,line)=>sum+line.quantity*line.unitPrice,0).toFixed(2)}</small>}</div><button type="button" onClick={() => {setItems("");setSelectedLines([]);}}>Clear</button></div>}
                 <label className="full">Notes<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Landmark, payment, or special note" /></label>
               </>}
-              <button className="primary-button full" disabled={!lot || (entryMode === "order" && (!customerName || !items))} onClick={saveEntry}>{entryMode === "owner" ? "Save owner home" : "Add order and pin"}</button>
+              {entryMode==="address"&&<><p className="prefilled-address full">{addressPrefilled?"Address copied from your search. ":""}Tap confirmed—add an optional customer name or contact.</p><label className="full">Customer name<input value={customerName} onChange={(event)=>setCustomerName(event.target.value)} placeholder="Optional"/></label><label className="full">Contact<input value={phone} onChange={(event)=>setPhone(event.target.value)} placeholder="Optional"/></label></>}
+              <button className="primary-button full" disabled={!lot || (entryMode === "order" && (!customerName || !items))} onClick={saveEntry}>{entryMode === "owner" ? "Save owner home" : entryMode==="address"?"Save address pin":"Add order and pin"}</button>
             </div>
-          </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdate={updateOrder} onDelete={deleteOrder} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} onUpdateAddress={updateAddress} onDeleteAddress={deleteAddress} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : !owner && entryMode === "owner" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap your home lot</strong><small>Drag or zoom the map first.</small></div></div> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
+          </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdate={updateOrder} onDelete={deleteOrder} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} onUpdateAddress={updateAddress} onDeleteAddress={deleteAddress} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : entryMode==="address" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap Phase {phase}, Block {block}, Lot {lot}</strong><small>Drag or zoom first, then tap its exact position.</small></div></div> : !owner && entryMode === "owner" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap your home lot</strong><small>Drag or zoom the map first.</small></div></div> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
         </aside>
-        {activeTab === "addresses" && <section className="settings-overlay address-book"><div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses & backups</h2></div><button className="primary-button" onClick={beginOrder}>+ Register on map</button></div><div className="backup-center"><BackupRow title="Addresses" count={data.addresses.length} onExport={exportAddresses} onImport={()=>addressImportRef.current?.click()}/><BackupRow title="Orders" count={data.orders.length} onExport={()=>downloadBackup("orders",data.orders)} onImport={()=>orderImportRef.current?.click()}/><BackupRow title="Products" count={products.length} onExport={()=>downloadBackup("products",products)} onImport={()=>productImportRef.current?.click()}/><BackupRow title="Full app" count={data.addresses.length+data.orders.length+products.length} onExport={()=>downloadBackup("data",data)} onImport={()=>fullImportRef.current?.click()}/><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importAddresses(file);}}/><input ref={orderImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"orders");}}/><input ref={productImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"products");}}/><input ref={fullImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"data");}}/>{addressTransferMessage&&<p>{addressTransferMessage}</p>}</div>{owner && <button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}{data.addresses.filter((address) => !address.isOwner).map((address) => <div className="address-book-row" key={address.id}><button className="address-main" onClick={() => { setSelectedAddressId(address.id); setSelectedOrderId(null); setActiveTab("map"); }}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order) => order.addressId === address.id).length} order(s)</small></div></button><button className="address-add" onClick={() => beginOrderForAddress(address)}>+ Order</button></div>)}{!data.addresses.some((address) => !address.isOwner) && <div className="empty-list">No customer addresses yet. Import a backup or register a new one on the map.</div>}</section>}
+        {activeTab === "addresses" && <section className="settings-overlay address-book">
+          <div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses & backups</h2></div><button className="primary-button" onClick={()=>beginAddressRegistration()}>+ Register on map</button></div>
+          <AddressSearch phase={addressSearchPhase} block={addressSearchBlock} lot={addressSearchLot} resultCount={addressMatches.length} active={addressSearchActive} onPhase={(next)=>{setAddressSearchPhase(next);setAddressSearchBlock(VALID_BLOCKS[next][0]);}} onBlock={setAddressSearchBlock} onLot={setAddressSearchLot} onClear={()=>setAddressSearchLot("")} onAdd={()=>beginAddressRegistration({phase:addressSearchPhase,block:addressSearchBlock,lot:searchedLot})}/>
+          <div className="backup-center"><BackupRow title="Addresses" count={data.addresses.length} onExport={exportAddresses} onImport={()=>addressImportRef.current?.click()}/><BackupRow title="Orders" count={data.orders.length} onExport={()=>downloadBackup("orders",data.orders)} onImport={()=>orderImportRef.current?.click()}/><BackupRow title="Products" count={products.length} onExport={()=>downloadBackup("products",products)} onImport={()=>productImportRef.current?.click()}/><BackupRow title="Full app" count={data.addresses.length+data.orders.length+products.length} onExport={()=>downloadBackup("data",data)} onImport={()=>fullImportRef.current?.click()}/><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importAddresses(file);}}/><input ref={orderImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"orders");}}/><input ref={productImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"products");}}/><input ref={fullImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"data");}}/>{addressTransferMessage&&<p>{addressTransferMessage}</p>}</div>
+          {owner&&<button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}
+          {addressMatches.map((address)=><div className="address-book-row" key={address.id}><button className="address-main" onClick={()=>{setSelectedAddressId(address.id);setSelectedOrderId(null);setActiveTab("map");}}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order)=>order.addressId===address.id).length} order(s)</small></div></button><button className="address-add" onClick={()=>beginOrderForAddress(address)}>+ Order</button></div>)}
+          {!addressMatches.length&&!addressSearchActive&&<div className="empty-list">No customer addresses yet. Import a backup or register a new one on the map.</div>}
+        </section>}
         {activeTab === "products" && <section className="settings-overlay product-manager"><div className="address-book-title"><div><p className="eyebrow">Menu catalog</p><h2>Products</h2></div></div><div className="product-form"><label>Product name<input value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="e.g. Mango Graham Tub" /></label><label>Price<input type="number" min="0" step="0.01" value={productPrice} onChange={(event) => setProductPrice(event.target.value)} placeholder="0.00" /></label><button className="primary-button" disabled={!productName.trim() || productPrice === ""} onClick={addProduct}>Add product</button></div><div className="product-list">{products.map((product)=><ProductRow key={product.id} product={product} onToggle={toggleProduct} onUpdate={updateProduct} onDelete={deleteProduct}/>)}{!products.length && <div className="empty-list">No products yet. Add your desserts here for faster order entry.</div>}</div></section>}
       </section>
       <nav className="bottom-nav" aria-label="Main navigation">
@@ -514,5 +542,7 @@ export default function Home() {
 }
 
 function BackupRow({title,count,onExport,onImport}:{title:string;count:number;onExport:()=>void;onImport:()=>void}){return <div className="backup-row"><div><strong>{title}</strong><small>{count} record{count===1?"":"s"}</small></div><div><button disabled={!count} onClick={onExport}>Export</button><button onClick={onImport}>Restore</button></div></div>;}
+
+function AddressSearch({phase,block,lot,resultCount,active,onPhase,onBlock,onLot,onClear,onAdd}:{phase:1|2;block:number;lot:string;resultCount:number;active:boolean;onPhase:(phase:1|2)=>void;onBlock:(block:number)=>void;onLot:(lot:string)=>void;onClear:()=>void;onAdd:()=>void}){return <div className="address-search"><div className="address-search-fields"><label>Phase<select value={phase} onChange={(event)=>onPhase(Number(event.target.value) as 1|2)}><option value="1">Phase 1</option><option value="2">Phase 2</option></select></label><label>Block<select value={block} onChange={(event)=>onBlock(Number(event.target.value))}>{VALID_BLOCKS[phase].map((value)=><option key={value} value={value}>Block {value}</option>)}</select></label><label>Lot<input inputMode="numeric" value={lot} onChange={(event)=>onLot(event.target.value.replace(/\D/g,""))} placeholder="Lot"/></label>{active&&<button className="search-clear" onClick={onClear}>Clear</button>}</div>{active&&(resultCount?<p className="search-result found">Address found below.</p>:<div className="search-result missing"><span>No saved address for Phase {phase}, Block {block}, Lot {lot}.</span><button onClick={onAdd}>+ Add this address</button></div>)}</div>;}
 
 function ProductRow({product,onToggle,onUpdate,onDelete}:{product:Product;onToggle:(id:string)=>void;onUpdate:(id:string,patch:Pick<Product,"name"|"price">)=>void;onDelete:(id:string)=>void}){const [editing,setEditing]=useState(false),[name,setName]=useState(product.name),[price,setPrice]=useState(String(product.price));return <article className={!product.active?"inactive":""}>{editing?<div className="product-inline-edit"><input aria-label="Product name" value={name} onChange={(event)=>setName(event.target.value)}/><input aria-label="Product price" type="number" min="0" step=".01" value={price} onChange={(event)=>setPrice(event.target.value)}/><button onClick={()=>setEditing(false)}>Cancel</button><button disabled={!name.trim()||!Number.isFinite(Number(price))||Number(price)<0} onClick={()=>{onUpdate(product.id,{name:name.trim(),price:Number(price)});setEditing(false);}}>Save</button></div>:<><div><strong>{product.name}</strong><small>₱{product.price.toFixed(2)}</small></div><div className="product-actions"><button onClick={()=>onToggle(product.id)}>{product.active?"Available":"Hidden"}</button><button onClick={()=>setEditing(true)}>Edit</button><button className="danger" onClick={()=>onDelete(product.id)}>Delete</button></div></>}</article>;}
