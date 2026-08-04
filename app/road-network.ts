@@ -1,9 +1,9 @@
 import { Point } from "./domain";
 
 export type RoadPath = { id: string; points: Point[] };
-export type RoadNetwork = { version: 1; paths: RoadPath[] };
+export type RoadNetwork = { version: 1; paths: RoadPath[]; active?: boolean };
 
-export const EMPTY_ROAD_NETWORK: RoadNetwork = { version: 1, paths: [] };
+export const EMPTY_ROAD_NETWORK: RoadNetwork = { version: 1, paths: [], active: false };
 
 const MAP_WIDTH = 2100;
 const MAP_HEIGHT = 1600;
