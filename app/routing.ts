@@ -1,6 +1,6 @@
 import { Point } from "./domain";
 
-export type RoadMask = { width: number; height: number; walkable: Uint8Array };
+export type RoadMask = { width: number; height: number; walkable: Uint8Array; clearance: Uint8Array };
 const MAP_WIDTH = 2100, MAP_HEIGHT = 1600;
 // Dark waterfront/encroachment artwork can resemble asphalt. These normalized
 // regions are known non-roads and must never be included in delivery paths.
@@ -46,28 +46,41 @@ function largestComponent(mask: Uint8Array,width:number,height:number) {
   const out=new Uint8Array(mask.length);for(const index of best)out[index]=1;return out;
 }
 
+function roadClearance(mask:Uint8Array,width:number,height:number){
+  const out=new Uint8Array(mask.length);for(let i=0;i<mask.length;i++)out[i]=mask[i]?255:0;
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const i=y*width+x;if(!out[i])continue;out[i]=Math.min(out[i],x?out[i-1]+1:1,y?out[i-width]+1:1);}
+  for(let y=height-1;y>=0;y--)for(let x=width-1;x>=0;x--){const i=y*width+x;if(!out[i])continue;out[i]=Math.min(out[i],x+1<width?out[i+1]+1:1,y+1<height?out[i+width]+1:1);}
+  return out;
+}
+
 export function createRoadMask(image: HTMLImageElement): RoadMask {
   const width=600, height=Math.round(width*image.naturalHeight/image.naturalWidth);
   const canvas=document.createElement("canvas"); canvas.width=width; canvas.height=height;
   const context=canvas.getContext("2d",{willReadFrequently:true})!; context.drawImage(image,0,0,width,height);
   const pixels=context.getImageData(0,0,width,height).data, raw=new Uint8Array(width*height);
   for(let i=0;i<raw.length;i++){const o=i*4,r=pixels[o],g=pixels[o+1],b=pixels[o+2]; if(r<75&&g<75&&b<75&&Math.max(r,g,b)-Math.min(r,g,b)<18) raw[i]=1;}
+  // Remove isolated printed details; clearance-weighted routing below then
+  // prefers wide street interiors over thin building and lot outlines.
   const broadDarkAreas=open(close(raw,width,height,2),width,height,2);
   const connectedRoads=largestComponent(broadDarkAreas,width,height);
   const walkable=close(connectedRoads,width,height,2);
   for(const exclusion of ROAD_EXCLUSIONS)
     for(let y=0;y<height;y++)for(let x=0;x<width;x++)
       if(insidePolygon({x:x/(width-1),y:y/(height-1)},exclusion))walkable[y*width+x]=0;
-  return {width,height,walkable};
+  return {width,height,walkable,clearance:roadClearance(walkable,width,height)};
 }
 
 export function roadPath(from: Point,to: Point,mask: RoadMask): Point[] {
   const pixel=(p:Point)=>({x:Math.round(p.x*(mask.width-1)),y:Math.round(p.y*(mask.height-1))});
-  const nearest=(seed:{x:number;y:number})=>{for(let r=0;r<100;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;const x=seed.x+dx,y=seed.y+dy;if(x>=0&&x<mask.width&&y>=0&&y<mask.height&&mask.walkable[y*mask.width+x])return y*mask.width+x;}return -1;};
+  const nearest=(seed:{x:number;y:number})=>{let best=-1,bestScore=Infinity;for(let dy=-45;dy<=45;dy++)for(let dx=-45;dx<=45;dx++){const x=seed.x+dx,y=seed.y+dy;if(x<0||x>=mask.width||y<0||y>=mask.height)continue;const index=y*mask.width+x;if(!mask.walkable[index])continue;const score=Math.hypot(dx,dy)+Math.max(0,8-mask.clearance[index])*5;if(score<bestScore){best=index;bestScore=score;}}return best;};
   const start=nearest(pixel(from)),end=nearest(pixel(to)); if(start<0||end<0)return [];
   const previous=new Int32Array(mask.walkable.length);previous.fill(-1);previous[start]=start;
-  const queue=new Int32Array(mask.walkable.length);let head=0,tail=0;queue[tail++]=start;
-  while(head<tail&&previous[end]<0){const current=queue[head++],x=current%mask.width,y=Math.floor(current/mask.width);for(const next of[x>0?current-1:-1,x+1<mask.width?current+1:-1,y>0?current-mask.width:-1,y+1<mask.height?current+mask.width:-1])if(next>=0&&mask.walkable[next]&&previous[next]<0){previous[next]=current;queue[tail++]=next;}}
+  const costs=new Float64Array(mask.walkable.length);costs.fill(Infinity);costs[start]=0;
+  const heap:Array<{node:number;priority:number;cost:number}>=[];
+  const push=(item:{node:number;priority:number;cost:number})=>{heap.push(item);let i=heap.length-1;while(i>0){const parent=(i-1)>>1;if(heap[parent].priority<=item.priority)break;heap[i]=heap[parent];i=parent;}heap[i]=item;};
+  const pop=()=>{const root=heap[0],last=heap.pop()!;if(heap.length){let i=0;while(true){let child=i*2+1;if(child>=heap.length)break;if(child+1<heap.length&&heap[child+1].priority<heap[child].priority)child++;if(heap[child].priority>=last.priority)break;heap[i]=heap[child];i=child;}heap[i]=last;}return root;};
+  const endX=end%mask.width,endY=Math.floor(end/mask.width);push({node:start,priority:0,cost:0});
+  while(heap.length){const item=pop(),current=item.node;if(item.cost!==costs[current])continue;if(current===end)break;const x=current%mask.width,y=Math.floor(current/mask.width);for(const next of[x>0?current-1:-1,x+1<mask.width?current+1:-1,y>0?current-mask.width:-1,y+1<mask.height?current+mask.width:-1])if(next>=0&&mask.walkable[next]){const edgePenalty=Math.max(0,7-mask.clearance[next])*8,nextCost=costs[current]+1+edgePenalty;if(nextCost<costs[next]){costs[next]=nextCost;previous[next]=current;const nx=next%mask.width,ny=Math.floor(next/mask.width);push({node:next,priority:nextCost+Math.abs(nx-endX)+Math.abs(ny-endY),cost:nextCost});}}}
   if(previous[end]<0)return[];const raw:Point[]=[];for(let node=end;node!==start;node=previous[node])raw.push({x:(node%mask.width)/(mask.width-1),y:Math.floor(node/mask.width)/(mask.height-1)});raw.push({x:(start%mask.width)/(mask.width-1),y:Math.floor(start/mask.width)/(mask.height-1)});raw.reverse();return raw.filter((_,i)=>i===0||i===raw.length-1||i%5===0);
 }
 
