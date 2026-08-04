@@ -9,6 +9,7 @@ import { hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath 
 import { useRoadNetwork } from "./use-road-network";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const MAX_MAP_ZOOM = 10;
 
 export default function Home() {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -473,7 +474,7 @@ export default function Home() {
         <section className="map-card">
           <div className="map-bar">
             <div><strong>{data.addresses.length}</strong> saved addresses <span>·</span> <strong>{data.orders.filter((order) => order.status === "ready").length}</strong> ready today</div>
-            <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={resetMapView}>Reset</button></div>
+            <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={resetMapView}>Reset</button></div>
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
           {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label><button className="road-edit-toggle" onClick={()=>{setEditingRoads(true);setShowLayers(false);setPendingPoint(null);setSelectedAddressId(null);setSelectedOrderId(null);}}>Edit road draft</button><small>Image routing is active{roadNetwork.paths.length?` · ${roadNetwork.paths.length} draft path${roadNetwork.paths.length===1?"":"s"} saved`:""}</small></div>}
@@ -500,7 +501,7 @@ export default function Home() {
             </div>
           </div>
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
-          <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(5, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
+          <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
           {editingRoads?<div className="road-editor-toolbar"><div><strong>Trace road centers</strong><small>Saved as a draft. Current delivery routing will not change.</small></div><button disabled={!activeRoadPathId} onClick={undoRoadPoint}>Undo</button><button onClick={()=>setActiveRoadPathId(null)}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){setRoadNetwork({version:1,paths:[],active:false});setActiveRoadPathId(null);}}}>Clear</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
         </section>
 
