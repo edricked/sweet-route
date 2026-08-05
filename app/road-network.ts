@@ -37,7 +37,7 @@ function buildGraph(network: RoadNetwork) {
       edges.get(from)!.push({to,cost});edges.get(to)!.push({to:from,cost});
     }
   }
-  return {nodes,edges};
+  return {nodes,edges,nodeByKey};
 }
 
 export function hasRoadNetwork(network: RoadNetwork) {
@@ -75,9 +75,37 @@ export function nearestRoadPoint(point: Point, network: RoadNetwork, maxDistance
 }
 
 export function roadNetworkPath(from: Point, to: Point, network: RoadNetwork): Point[] {
-  const {nodes,edges}=buildGraph(network);if(!nodes.length)return[];
-  const nearest=(point:Point)=>{let best=0,bestDistance=distance(point,nodes[0]);for(let i=1;i<nodes.length;i++){const next=distance(point,nodes[i]);if(next<bestDistance){best=i;bestDistance=next;}}return best;};
-  const start=nearest(from),end=nearest(to);
+  const {nodes,edges,nodeByKey}=buildGraph(network);if(!nodes.length)return[];
+  type Projection={point:Point;fromNode:number;toNode:number;fromCost:number;toCost:number;pathIndex:number;segmentIndex:number;ratio:number};
+  const nearestSegment=(point:Point):Projection|null=>{
+    let best:Projection|null=null,bestDistance=Infinity;
+    network.paths.forEach((path,pathIndex)=>path.points.slice(1).forEach((segmentEnd,offset)=>{
+      const segmentStart=path.points[offset];
+      const ax=segmentStart.x*MAP_WIDTH,ay=segmentStart.y*MAP_HEIGHT,bx=segmentEnd.x*MAP_WIDTH,by=segmentEnd.y*MAP_HEIGHT;
+      const px=point.x*MAP_WIDTH,py=point.y*MAP_HEIGHT,dx=bx-ax,dy=by-ay,lengthSquared=dx*dx+dy*dy;
+      const ratio=lengthSquared?Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/lengthSquared)):0;
+      const projected={x:(ax+ratio*dx)/MAP_WIDTH,y:(ay+ratio*dy)/MAP_HEIGHT};
+      const nextDistance=distance(point,projected);
+      if(nextDistance<bestDistance){
+        const fromNode=nodeByKey.get(pointKey(segmentStart)),toNode=nodeByKey.get(pointKey(segmentEnd));
+        if(fromNode===undefined||toNode===undefined)return;
+        bestDistance=nextDistance;
+        best={point:projected,fromNode,toNode,fromCost:distance(segmentStart,projected),toCost:distance(projected,segmentEnd),pathIndex,segmentIndex:offset,ratio};
+      }
+    }));
+    return best;
+  };
+  const startProjection=nearestSegment(from),endProjection=nearestSegment(to);if(!startProjection||!endProjection)return[];
+  const addProjection=(projection:Projection)=>{
+    const index=nodes.length;nodes.push(projection.point);edges.set(index,[{to:projection.fromNode,cost:projection.fromCost},{to:projection.toNode,cost:projection.toCost}]);
+    edges.get(projection.fromNode)!.push({to:index,cost:projection.fromCost});edges.get(projection.toNode)!.push({to:index,cost:projection.toCost});
+    return index;
+  };
+  const start=addProjection(startProjection),end=addProjection(endProjection);
+  if(startProjection.pathIndex===endProjection.pathIndex&&startProjection.segmentIndex===endProjection.segmentIndex){
+    const direct=Math.abs(startProjection.ratio-endProjection.ratio)*(startProjection.fromCost+startProjection.toCost);
+    edges.get(start)!.push({to:end,cost:direct});edges.get(end)!.push({to:start,cost:direct});
+  }
   const costs=new Float64Array(nodes.length);costs.fill(Infinity);costs[start]=0;
   const previous=new Int32Array(nodes.length);previous.fill(-1);
   const visited=new Uint8Array(nodes.length);
