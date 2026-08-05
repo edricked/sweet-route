@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Address, AppData, AppTab, DeliveryStatus, Order, OrderLine, Product, STATUS_LABEL as statusLabel, VALID_BLOCKS, addressLabel, makeId } from "./domain";
-import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance } from "./routing";
+import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance, validateRoadGeometry } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
 import { AddressDetails, OrderDetails } from "./order-details";
 import { hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
 import { useRoadNetwork } from "./use-road-network";
+import { SalesDashboard } from "./sales-dashboard";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const MAX_MAP_ZOOM = 10;
@@ -96,6 +97,10 @@ export default function Home() {
     owner,
     data.addresses.filter((address)=>!address.isOwner),
   ),[roadNetwork,owner,data.addresses]);
+  const roadGeometryResult=useMemo(()=>validateRoadGeometry(roadNetwork.paths.map((path)=>path.points),roadMask),[roadNetwork.paths,roadMask]);
+  const roadGeometry={...roadGeometryResult,offRoadSegments:roadGeometryResult.offRoadSegments.length};
+  const roadGeometryValid=roadGeometry.sampledPoints>0&&roadGeometry.coverage>=.9&&roadGeometry.offRoadSegments===0;
+  const roadDraftValid=roadValidation.valid&&roadGeometryValid;
   const deliveryDistance=(from:Address,to:Address)=>graphReady?roadNetworkDistance(from,to,roadNetwork):roadOrStraightDistance(from,to,roadMask);
   const suggestedRoute = useMemo(() => {
     if (!routeStart) return [];
@@ -300,7 +305,7 @@ export default function Home() {
     setData((current) => {
       return {
         ...current,
-        orders: current.orders.map((order) => order.id === orderId ? { ...order, status: nextStatus } : order),
+        orders: current.orders.map((order) => order.id === orderId ? { ...order, status: nextStatus, deliveredAt: nextStatus === "delivered" ? order.deliveredAt ?? new Date().toISOString() : undefined } : order),
         routeStartAddressId: nextStatus === "delivered" && !hasRemainingDelivery ? undefined : current.routeStartAddressId,
       };
     });
@@ -455,7 +460,7 @@ export default function Home() {
 
       <section className={`main-layout view-${activeTab}`}>
         <aside className="order-panel">
-          {activeTab === "today" && <div className="today-intro"><p className="eyebrow">Today</p><h2>Ready to deliver something sweet?</h2><div className="stats-grid"><article><span>Preparing</span><strong>{preparingCount}</strong></article><article><span>Ready</span><strong>{readyCount}</strong></article><article><span>Delivered</span><strong>{deliveredCount}</strong></article></div></div>}
+          {activeTab === "today" && <><div className="today-intro"><p className="eyebrow">Today</p><h2>Ready to deliver something sweet?</h2><div className="stats-grid"><article><span>Preparing</span><strong>{preparingCount}</strong></article><article><span>Ready</span><strong>{readyCount}</strong></article><article><span>Delivered</span><strong>{deliveredCount}</strong></article></div></div><SalesDashboard orders={data.orders} addresses={data.addresses}/></>}
           <div className="panel-title"><div><p>{activeTab === "today" ? "Today’s queue" : "Orders"}</p><h2>{visibleOrders.length} shown</h2></div><button className="route-button" disabled={!owner} onClick={() => { planRoute(); setActiveTab("map"); }}>Plan route</button></div>
           {routeAddresses.length > 0 && <div className="route-summary"><strong>{routeAddresses.length} stop{routeAddresses.length === 1 ? "" : "s"}</strong><span>Starting from {routeStart ? addressLabel(routeStart) : "owner home"}</span><button onClick={() => { setRouteAddressIds([]); setRouteVisible(false); }}>Clear</button></div>}
           {data.routeStartAddressId && routeStart && <div className="active-route-start"><span>Current route position: <strong>{addressLabel(routeStart)}</strong></span><button onClick={() => updateRouteStart(routeStart.id, false)}>Start from home</button></div>}
@@ -485,7 +490,7 @@ export default function Home() {
             <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={resetMapView}>Reset</button></div>
           </div>
           <button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>
-          {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label><button className="road-edit-toggle" onClick={()=>{setRoadNetwork((current)=>({...current,active:false}));setEditingRoads(true);setShowLayers(false);setShowRoadValidation(false);setPendingPoint(null);setSelectedAddressId(null);setSelectedOrderId(null);}}>Edit road draft</button><button className="road-validate-toggle" disabled={!roadNetwork.paths.length} onClick={()=>setShowRoadValidation(true)}>Validate road network</button>{showRoadValidation&&<div className={`road-validation ${roadValidation.valid?"valid":"invalid"}`}><strong>{roadValidation.valid?"Road network is valid":"Draft needs attention"}</strong><span>{roadValidation.usablePaths} traced path{roadValidation.usablePaths===1?"":"s"} · {roadValidation.components} connected section{roadValidation.components===1?"":"s"}</span>{roadValidation.incompletePaths>0&&<span>{roadValidation.incompletePaths} unfinished path{roadValidation.incompletePaths===1?"":"s"}</span>}{!owner&&<span>Set an owner home first.</span>}{roadValidation.unreachablePoints>0&&<span>{roadValidation.unreachablePoints} address{roadValidation.unreachablePoints===1?" is":"es are"} unreachable from home.</span>}</div>}<label className="road-routing-toggle"><input type="checkbox" role="switch" checked={roadNetwork.active===true} disabled={!roadNetwork.paths.length} onChange={(event)=>{if(!event.target.checked){setRoadNetwork((current)=>({...current,active:false}));return;}setShowRoadValidation(true);if(roadValidation.valid)setRoadNetwork((current)=>({...current,active:true}));}}/><span className="road-switch" aria-hidden="true"/><span><strong>Use road draft</strong><small>{roadNetwork.active?"On — traced-road routing":"Off — default image routing"}</small></span></label><small>{roadNetwork.active?"Traced-road routing is active":`Image routing is active${roadNetwork.paths.length?` · ${roadNetwork.paths.length} draft path${roadNetwork.paths.length===1?"":"s"} saved`:""}`}</small></div>}
+          {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label><button className="road-edit-toggle" onClick={()=>{setRoadNetwork((current)=>({...current,active:false}));setEditingRoads(true);setShowLayers(false);setShowRoadValidation(false);setPendingPoint(null);setSelectedAddressId(null);setSelectedOrderId(null);}}>Edit road draft</button><button className="road-validate-toggle" disabled={!roadNetwork.paths.length} onClick={()=>setShowRoadValidation(true)}>Validate road network</button>{showRoadValidation&&<div className={`road-validation ${roadDraftValid?"valid":"invalid"}`}><strong>{roadDraftValid?"Road network is valid":"Draft needs attention"}</strong><span>{roadValidation.usablePaths} traced path{roadValidation.usablePaths===1?"":"s"} · {roadValidation.components} connected section{roadValidation.components===1?"":"s"}</span><span>{Math.round(roadGeometry.coverage*100)}% of the draft follows detected roads.</span>{roadGeometry.offRoadSegments>0&&<span>{roadGeometry.offRoadSegments} segment{roadGeometry.offRoadSegments===1?" crosses":"s cross"} houses or other non-road areas.</span>}{roadValidation.incompletePaths>0&&<span>{roadValidation.incompletePaths} unfinished path{roadValidation.incompletePaths===1?"":"s"}</span>}{!owner&&<span>Set an owner home first.</span>}{roadValidation.unreachablePoints>0&&<span>{roadValidation.unreachablePoints} address{roadValidation.unreachablePoints===1?" is":"es are"} unreachable from home.</span>}</div>}<label className="road-routing-toggle"><input type="checkbox" role="switch" checked={roadNetwork.active===true} disabled={!roadNetwork.paths.length} onChange={(event)=>{if(!event.target.checked){setRoadNetwork((current)=>({...current,active:false}));return;}setShowRoadValidation(true);if(roadDraftValid)setRoadNetwork((current)=>({...current,active:true}));}}/><span className="road-switch" aria-hidden="true"/><span><strong>Use road draft</strong><small>{roadNetwork.active?"On — traced-road routing":"Off — default image routing"}</small></span></label><small>{roadNetwork.active?"Traced-road routing is active":`Image routing is active${roadNetwork.paths.length?` · ${roadNetwork.paths.length} draft path${roadNetwork.paths.length===1?"":"s"} saved`:""}`}</small></div>}
           <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick}>
             <div ref={mapRef} className={`map-surface ${editingRoads?"editing-roads":""}`} style={{ width: `${zoom * 100}%` }}>
               {/* A native image is required because routing samples its pixels through canvas. */}
@@ -498,7 +503,7 @@ export default function Home() {
                   ))}
                 </svg>
               )}
-              {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>{path.points.map((point,index)=><circle key={index} cx={point.x*2100} cy={point.y*1600} r="9"/>)}</g>)}</svg>}
+              {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>{path.points.map((point,index)=><circle key={index} cx={point.x*2100} cy={point.y*1600} r="9"/>)}</g>)}{roadGeometryResult.offRoadSegments.map(({pathIndex,segmentIndex})=>{const points=roadNetwork.paths[pathIndex]?.points.slice(segmentIndex,segmentIndex+2)??[];return points.length===2?<polyline className="off-road" key={`${pathIndex}:${segmentIndex}`} points={points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>:null;})}</svg>}
               {data.addresses.filter((address) => showAllAddresses || address.isOwner || data.orders.some((order) => order.addressId === address.id && !["delivered", "cancelled"].includes(order.status))).map((address) => (
                 <button key={address.id} className={`address-pin ${address.isOwner ? "owner" : ""} ${selectedAddressId === address.id ? "selected" : ""}`} style={{ left: `${address.x * 100}%`, top: `${address.y * 100}%` }} title={addressLabel(address)} onClick={(event) => { event.stopPropagation(); setSelectedAddressId(address.id); }}>
                   {address.isOwner ? "⌂" : "●"}

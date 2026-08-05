@@ -27,6 +27,7 @@ export function useLocalAppData() {
             paymentStatus: order.paymentStatus === "paid" ? "paid" as const : "unpaid" as const,
             total: Number.isFinite(order.total) ? order.total : 0,
             lineItems: Array.isArray(order.lineItems) ? order.lineItems : [],
+            deliveredAt: order.status === "delivered" ? order.deliveredAt ?? order.createdAt : order.deliveredAt,
           }));
           const clearOrders = new URLSearchParams(window.location.search).get("clearOrders") === "1";
           const restoredOrders = clearOrders ? [] : parsedOrders;

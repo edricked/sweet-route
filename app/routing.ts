@@ -1,6 +1,7 @@
 import { Point } from "./domain";
 
 export type RoadMask = { width: number; height: number; walkable: Uint8Array; clearance: Uint8Array };
+export type RoadGeometryValidation = { coverage: number; offRoadSegments: Array<{ pathIndex: number; segmentIndex: number }>; sampledPoints: number };
 const MAP_WIDTH = 2100, MAP_HEIGHT = 1600;
 // Dark waterfront/encroachment artwork can resemble asphalt. These normalized
 // regions are known non-roads and must never be included in delivery paths.
@@ -86,4 +87,34 @@ export function roadPath(from: Point,to: Point,mask: RoadMask): Point[] {
 
 export function routeDistance(from: Point,to: Point,mask: RoadMask|null) {
   if(mask){const path=roadPath(from,to,mask);if(path.length>1)return path.slice(1).reduce((sum,p,i)=>sum+distance(path[i],p),0);}return distance(from,to);
+}
+
+export function validateRoadGeometry(paths: Point[][], mask: RoadMask | null): RoadGeometryValidation {
+  if (!mask) return { coverage: 0, offRoadSegments: [], sampledPoints: 0 };
+  let onRoad = 0, sampledPoints = 0;
+  const offRoadSegments: Array<{ pathIndex: number; segmentIndex: number }> = [];
+  const isRoad = (point: Point) => {
+    const centerX = Math.round(point.x * (mask.width - 1)), centerY = Math.round(point.y * (mask.height - 1));
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      const x = centerX + dx, y = centerY + dy;
+      if (x >= 0 && x < mask.width && y >= 0 && y < mask.height && mask.walkable[y * mask.width + x]) return true;
+    }
+    return false;
+  };
+  paths.forEach((path, pathIndex) => {
+    for (let index = 1; index < path.length; index++) {
+      const from = path[index - 1], to = path[index];
+      const length = Math.hypot((to.x - from.x) * mask.width, (to.y - from.y) * mask.height);
+      const samples = Math.max(2, Math.ceil(length / 2));
+      let segmentOnRoad = 0;
+      for (let sample = 0; sample <= samples; sample++) {
+        const ratio = sample / samples;
+        const point = { x: from.x + (to.x - from.x) * ratio, y: from.y + (to.y - from.y) * ratio };
+        sampledPoints += 1;
+        if (isRoad(point)) { onRoad += 1; segmentOnRoad += 1; }
+      }
+      if (segmentOnRoad / (samples + 1) < .8) offRoadSegments.push({ pathIndex, segmentIndex: index - 1 });
+    }
+  });
+  return { coverage: sampledPoints ? onRoad / sampledPoints : 0, offRoadSegments, sampledPoints };
 }

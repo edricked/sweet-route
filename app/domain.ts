@@ -12,6 +12,7 @@ export type Order = {
   id: string; addressId: string; customerName: string; phone: string;
   items: string; status: DeliveryStatus; notes: string; createdAt: string;
   lineItems?: OrderLine[]; total?: number; paymentStatus?: "unpaid" | "paid";
+  deliveredAt?: string;
 };
 
 export type Product = { id: string; name: string; price: number; active: boolean; createdAt: string };
