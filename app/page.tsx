@@ -5,7 +5,7 @@ import { Address, AppData, AppTab, DeliveryStatus, Order, OrderLine, Product, ST
 import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance, validateRoadGeometry } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
 import { AddressDetails, OrderDetails } from "./order-details";
-import { hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
+import { RoadNetwork, hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
 import { useRoadNetwork } from "./use-road-network";
 import { SalesDashboard } from "./sales-dashboard";
 
@@ -21,6 +21,7 @@ export default function Home() {
   const productImportRef = useRef<HTMLInputElement>(null);
   const fullImportRef = useRef<HTMLInputElement>(null);
   const roadImportRef = useRef<HTMLInputElement>(null);
+  const roadUndoStackRef = useRef<RoadNetwork[]>([]);
   const [data, setData, isHydrated] = useLocalAppData();
   const [roadNetwork,setRoadNetwork]=useRoadNetwork();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
@@ -61,6 +62,7 @@ export default function Home() {
   const [showRoadValidation,setShowRoadValidation]=useState(false);
   const [selectedRoadPoint,setSelectedRoadPoint]=useState<{pathId:string;index:number}|null>(null);
   const [movingRoadPoint,setMovingRoadPoint]=useState(false);
+  const [roadUndoCount,setRoadUndoCount]=useState(0);
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -214,11 +216,11 @@ export default function Home() {
     if(editingRoads){
       setShowRoadValidation(false);
       if(movingRoadPoint&&selectedRoadPoint){
-        setRoadNetwork((current)=>({...current,active:false,paths:current.paths.map((path)=>path.id===selectedRoadPoint.pathId?{...path,points:path.points.map((existing,index)=>index===selectedRoadPoint.index?point:existing)}:path)}));
+        commitRoadEdit((current)=>({...current,active:false,paths:current.paths.map((path)=>path.id===selectedRoadPoint.pathId?{...path,points:path.points.map((existing,index)=>index===selectedRoadPoint.index?point:existing)}:path)}));
         setMovingRoadPoint(false);
         return;
       }
-      setRoadNetwork((current)=>{
+      commitRoadEdit((current)=>{
         const snapped=nearestRoadPoint(point,current);
         const pathId=activeRoadPathId??makeId("road");
         if(!activeRoadPathId)setActiveRoadPathId(pathId);
@@ -232,7 +234,15 @@ export default function Home() {
     setSelectedAddressId(null);
   }
 
+  function commitRoadEdit(update:(current:RoadNetwork)=>RoadNetwork){
+    roadUndoStackRef.current=[...roadUndoStackRef.current,roadNetwork].slice(-50);
+    setRoadUndoCount(roadUndoStackRef.current.length);
+    setRoadNetwork(update(roadNetwork));
+  }
+
   function undoRoadPoint(){
+    const previous=roadUndoStackRef.current.at(-1);
+    if(previous){roadUndoStackRef.current=roadUndoStackRef.current.slice(0,-1);setRoadUndoCount(roadUndoStackRef.current.length);setRoadNetwork(previous);setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowRoadValidation(false);return;}
     if(!activeRoadPathId)return;
     setShowRoadValidation(false);
     setRoadNetwork((current)=>({...current,paths:current.paths.flatMap((path)=>path.id!==activeRoadPathId?[path]:path.points.length>1?[{...path,points:path.points.slice(0,-1)}]:[])}));
@@ -240,7 +250,7 @@ export default function Home() {
 
   function deleteSelectedRoadPoint(){
     if(!selectedRoadPoint)return;
-    setRoadNetwork((current)=>({...current,active:false,paths:current.paths.flatMap((path)=>{
+    commitRoadEdit((current)=>({...current,active:false,paths:current.paths.flatMap((path)=>{
       if(path.id!==selectedRoadPoint.pathId)return[path];
       const points=path.points.filter((_,index)=>index!==selectedRoadPoint.index);
       return points.length?[{...path,points}]:[];
@@ -250,11 +260,11 @@ export default function Home() {
 
   function deleteActiveRoadPath(){
     if(!activeRoadPathId||!window.confirm("Delete this traced road path?"))return;
-    setRoadNetwork((current)=>({...current,active:false,paths:current.paths.filter((path)=>path.id!==activeRoadPathId)}));
+    commitRoadEdit((current)=>({...current,active:false,paths:current.paths.filter((path)=>path.id!==activeRoadPathId)}));
     setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowRoadValidation(false);
   }
 
-  function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowLayers(false);}
+  function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);roadUndoStackRef.current=[];setRoadUndoCount(0);setShowLayers(false);}
 
   function saveEntry() {
     const numericLot = Number(lot);
@@ -549,7 +559,7 @@ export default function Home() {
           </div>
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
           <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
-          {editingRoads?<div className="road-editor-toolbar"><div><strong>{movingRoadPoint?"Tap the corrected road position":"Trace road centers"}</strong><small>{selectedRoadPoint?"Selected point can be moved or deleted.":roadValidation.incompletePaths?"The pulsing red marker is an unfinished path. Select it to continue or delete it.":"Tap a point to edit it, or tap the road to keep tracing."}</small></div><button disabled={!activeRoadPathId} onClick={undoRoadPoint}>Undo</button><button disabled={!selectedRoadPoint} onClick={()=>setMovingRoadPoint(true)}>Move point</button><button disabled={!selectedRoadPoint} onClick={deleteSelectedRoadPoint}>Delete point</button><button disabled={!activeRoadPathId} onClick={deleteActiveRoadPath}>Delete path</button><button onClick={()=>{setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);}}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){setRoadNetwork({version:1,paths:[],active:false});setActiveRoadPathId(null);setSelectedRoadPoint(null);}}}>Clear</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
+          {editingRoads?<div className="road-editor-toolbar"><div><strong>{movingRoadPoint?"Tap the corrected road position":"Trace road centers"}</strong><small>{selectedRoadPoint?"Selected point can be moved or deleted.":roadValidation.incompletePaths?"The pulsing red marker is an unfinished path. Select it to continue or delete it.":"Tap a point to edit it, or tap the road to keep tracing."}</small></div><button disabled={!activeRoadPathId&&!roadUndoCount} onClick={undoRoadPoint}>Undo</button><button disabled={!selectedRoadPoint} onClick={()=>setMovingRoadPoint(true)}>Move point</button><button disabled={!selectedRoadPoint} onClick={deleteSelectedRoadPoint}>Delete point</button><button disabled={!activeRoadPathId} onClick={deleteActiveRoadPath}>Delete path</button><button onClick={()=>{setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);}}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){commitRoadEdit(()=>({version:1,paths:[],active:false}));setActiveRoadPathId(null);setSelectedRoadPoint(null);}}}>Clear</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
         </section>
 
         <aside className={`entry-panel ${!owner && !pendingPoint ? "owner-required" : ""}`}>
