@@ -74,6 +74,27 @@ export function nearestRoadPoint(point: Point, network: RoadNetwork, maxDistance
   return best<=maxDistance?nearest:point;
 }
 
+export function connectRoadPoint(point: Point, network: RoadNetwork, maxDistance=30): { point: Point; network: RoadNetwork } {
+  let best:{pathId:string;segmentIndex:number;ratio:number;point:Point;distance:number}|null=null;
+  for(const path of network.paths)for(let segmentIndex=0;segmentIndex<path.points.length-1;segmentIndex++){
+    const start=path.points[segmentIndex],end=path.points[segmentIndex+1];
+    const ax=start.x*MAP_WIDTH,ay=start.y*MAP_HEIGHT,bx=end.x*MAP_WIDTH,by=end.y*MAP_HEIGHT;
+    const px=point.x*MAP_WIDTH,py=point.y*MAP_HEIGHT,dx=bx-ax,dy=by-ay,lengthSquared=dx*dx+dy*dy;
+    const ratio=lengthSquared?Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/lengthSquared)):0;
+    const projected={x:(ax+ratio*dx)/MAP_WIDTH,y:(ay+ratio*dy)/MAP_HEIGHT};
+    const nextDistance=distance(point,projected);
+    if(!best||nextDistance<best.distance)best={pathId:path.id,segmentIndex,ratio,point:projected,distance:nextDistance};
+  }
+  if(!best||best.distance>maxDistance)return{point,network};
+  const source=network.paths.find((path)=>path.id===best!.pathId)!;
+  const connectedPoint=best.ratio<.001?source.points[best.segmentIndex]:best.ratio>.999?source.points[best.segmentIndex+1]:best.point;
+  if(best.ratio<.001||best.ratio>.999)return{point:connectedPoint,network};
+  return{
+    point:connectedPoint,
+    network:{...network,paths:network.paths.map((path)=>path.id===best!.pathId?{...path,points:[...path.points.slice(0,best!.segmentIndex+1),connectedPoint,...path.points.slice(best!.segmentIndex+1)]}:path)},
+  };
+}
+
 export function roadNetworkPath(from: Point, to: Point, network: RoadNetwork): Point[] {
   const {nodes,edges,nodeByKey}=buildGraph(network);if(!nodes.length)return[];
   type Projection={point:Point;fromNode:number;toNode:number;fromCost:number;toCost:number;pathIndex:number;segmentIndex:number;ratio:number};

@@ -34,6 +34,7 @@ test("keeps routing, sales recognition, and road backups wired", async () => {
   ]);
   assert.match(routing, /nearestSegment/);
   assert.match(routing, /addProjection/);
+  assert.match(routing, /connectRoadPoint/);
   assert.match(page, /Road draft/);
   assert.match(page, /importRoadBackup/);
   assert.match(page, /roadNetwork\}/);

@@ -5,7 +5,7 @@ import { Address, AppData, AppTab, DeliveryStatus, Order, OrderLine, Product, ST
 import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance, validateRoadGeometry } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
 import { AddressDetails, OrderDetails } from "./order-details";
-import { RoadNetwork, hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
+import { RoadNetwork, connectRoadPoint, hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
 import { useRoadNetwork } from "./use-road-network";
 import { SalesDashboard } from "./sales-dashboard";
 
@@ -221,11 +221,11 @@ export default function Home() {
         return;
       }
       commitRoadEdit((current)=>{
-        const snapped=nearestRoadPoint(point,current);
         const pathId=activeRoadPathId??makeId("road");
         if(!activeRoadPathId)setActiveRoadPathId(pathId);
-        const existing=current.paths.find((path)=>path.id===pathId);
-        return {...current,paths:existing?current.paths.map((path)=>path.id===pathId?{...path,points:[...path.points,snapped]}:path):[...current.paths,{id:pathId,points:[snapped]}]};
+        const connection=activeRoadPathId?{point:nearestRoadPoint(point,current),network:current}:connectRoadPoint(point,current);
+        const existing=connection.network.paths.find((path)=>path.id===pathId);
+        return {...connection.network,active:false,paths:existing?connection.network.paths.map((path)=>path.id===pathId?{...path,points:[...path.points,connection.point]}:path):[...connection.network.paths,{id:pathId,points:[connection.point]}]};
       });
       return;
     }
