@@ -46,6 +46,7 @@ export default function Home() {
   const [routeVisible, setRouteVisible] = useState(true);
   const [roadMask, setRoadMask] = useState<RoadMask | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>("map");
+  const [showSettingsMenu,setShowSettingsMenu]=useState(false);
   const [productName, setProductName] = useState("");
   const [productPrice, setProductPrice] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -85,6 +86,7 @@ export default function Home() {
   const visibleOrders = useMemo(() => {
     const query = search.trim().toLowerCase();
     return data.orders.filter((order) => {
+      if(activeTab==="today"&&new Date(order.createdAt).toDateString()!==new Date().toDateString())return false;
       if (filter !== "all" && order.status !== filter) return false;
       if (!query) return true;
       const address = data.addresses.find((item) => item.id === order.addressId);
@@ -93,7 +95,7 @@ export default function Home() {
         .toLowerCase()
         .includes(query);
     });
-  }, [data.addresses, data.orders, filter, search]);
+  }, [activeTab,data.addresses, data.orders, filter, search]);
   // Traced roads remain a draft until a future validation/publish workflow
   // explicitly activates them. Deliveries continue using image-based routing.
   const graphReady=roadNetwork.active===true&&hasRoadNetwork(roadNetwork);
@@ -542,9 +544,11 @@ export default function Home() {
     }
   }
 
-  const preparingCount = data.orders.filter((order) => order.status === "preparing").length;
-  const readyCount = data.orders.filter((order) => order.status === "ready").length;
-  const deliveredCount = data.orders.filter((order) => order.status === "delivered").length;
+  const todayKey=new Date().toDateString();
+  const todayOrders=data.orders.filter((order)=>new Date(order.createdAt).toDateString()===todayKey);
+  const preparingCount = todayOrders.filter((order) => order.status === "preparing").length;
+  const readyCount = todayOrders.filter((order) => order.status === "ready").length;
+  const deliveredCount = todayOrders.filter((order) => order.status === "delivered").length;
 
   return (
     <main className="delivery-app">
@@ -562,6 +566,7 @@ export default function Home() {
           <span className="save-chip">● Saved locally</span>
           <button className="ghost-button" onClick={beginOwnerSetup}>{owner ? "Edit home pin" : "Set owner home"}</button>
           <button className="primary-button" onClick={beginOrder}>+ New order</button>
+          <div className="settings-menu"><button className="settings-icon" aria-label="Settings" aria-expanded={showSettingsMenu} onClick={()=>setShowSettingsMenu((value)=>!value)}>⚙</button>{showSettingsMenu&&<div className="settings-dropdown"><button onClick={()=>{setActiveTab("settings");setShowSettingsMenu(false);}}>Backup &amp; restore <span>›</span></button></div>}</div>
         </div>
       </header>
 
@@ -593,7 +598,7 @@ export default function Home() {
 
         <section className={`map-card ${editingRoads?"road-editing":""}`}>
           <div className="map-bar">
-            <div><strong>{data.addresses.length}</strong> saved addresses <span>·</span> <strong>{data.orders.filter((order) => order.status === "ready").length}</strong> ready today</div>
+            <div><strong>{data.addresses.length}</strong> saved addresses <span>·</span> <strong>{todayOrders.filter((order) => order.status === "ready").length}</strong> ready today</div>
             <div className="map-controls"><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={resetMapView}>Reset</button></div>
           </div>
           {!editingRoads&&<button className="layers-button" onClick={() => setShowLayers((value) => !value)}>Layers</button>}
@@ -647,14 +652,14 @@ export default function Home() {
           </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} products={products} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdate={updateOrder} onDelete={deleteOrder} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} products={products} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} onUpdateAddress={updateAddress} onDeleteAddress={deleteAddress} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : entryMode==="address" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap Phase {phase}, Block {block}, Lot {lot}</strong><small>Drag or zoom first, then tap its exact position.</small></div></div> : !owner && entryMode === "owner" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap your home lot</strong><small>Drag or zoom the map first.</small></div></div> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
         </aside>
         {activeTab === "addresses" && <section className="settings-overlay address-book">
-          <div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses & backups</h2></div><button className="primary-button" onClick={()=>beginAddressRegistration()}>+ Register on map</button></div>
+          <div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses</h2></div><button className="primary-button" onClick={()=>beginAddressRegistration()}>+ Register on map</button></div>
           <AddressSearch phase={addressSearchPhase} block={addressSearchBlock} lot={addressSearchLot} resultCount={addressMatches.length} active={addressSearchActive} onPhase={(next)=>{setAddressSearchPhase(next);setAddressSearchBlock(VALID_BLOCKS[next][0]);}} onBlock={setAddressSearchBlock} onLot={setAddressSearchLot} onClear={()=>setAddressSearchLot("")} onAdd={()=>beginAddressRegistration({phase:addressSearchPhase,block:addressSearchBlock,lot:searchedLot})}/>
-          <div className="backup-center"><BackupRow title="Addresses" count={data.addresses.length} onExport={exportAddresses} onImport={()=>addressImportRef.current?.click()}/><BackupRow title="Orders" count={data.orders.length} onExport={()=>downloadBackup("orders",data.orders)} onImport={()=>orderImportRef.current?.click()}/><BackupRow title="Products" count={products.length} onExport={()=>downloadBackup("products",products)} onImport={()=>productImportRef.current?.click()}/><BackupRow title="Road draft" count={roadNetwork.paths.length} onExport={()=>downloadBackup("roads",roadNetwork)} onImport={()=>roadImportRef.current?.click()}/><BackupRow title="Full app" count={data.addresses.length+data.orders.length+products.length+roadNetwork.paths.length} onExport={()=>downloadBackup("data",{...data,roadNetwork})} onImport={()=>fullImportRef.current?.click()}/><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importAddresses(file);}}/><input ref={orderImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"orders");}}/><input ref={productImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"products");}}/><input ref={roadImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importRoadBackup(file);}}/><input ref={fullImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"data");}}/>{addressTransferMessage&&<p>{addressTransferMessage}</p>}</div>
           {owner&&<button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}
           {addressMatches.map((address)=><div className="address-book-row" key={address.id}><button className="address-main" onClick={()=>{setSelectedAddressId(address.id);setSelectedOrderId(null);setActiveTab("map");}}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order)=>order.addressId===address.id).length} order(s)</small></div></button><button className="address-add" onClick={()=>beginOrderForAddress(address)}>+ Order</button></div>)}
           {!addressMatches.length&&!addressSearchActive&&<div className="empty-list">No customer addresses yet. Import a backup or register a new one on the map.</div>}
         </section>}
         {activeTab === "products" && <section className="settings-overlay product-manager"><div className="address-book-title"><div><p className="eyebrow">Menu catalog</p><h2>Products</h2></div></div><div className="product-form"><label>Product name<input value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="e.g. Mango Graham Tub" /></label><label>Price<input type="number" min="0" step="0.01" value={productPrice} onChange={(event) => setProductPrice(event.target.value)} placeholder="0.00" /></label><button className="primary-button" disabled={!productName.trim() || productPrice === ""} onClick={addProduct}>Add product</button></div><div className="product-list">{products.map((product)=><ProductRow key={product.id} product={product} onToggle={toggleProduct} onUpdate={updateProduct} onDelete={deleteProduct}/>)}{!products.length && <div className="empty-list">No products yet. Add your desserts here for faster order entry.</div>}</div></section>}
+        {activeTab === "settings" && <section className="settings-overlay backup-page"><div className="address-book-title"><div><p className="eyebrow">Settings</p><h2>Backup &amp; restore</h2></div></div><p className="backup-intro">Export each data group separately, or use Full app for a complete snapshot of this device.</p><div className="backup-center"><BackupRow title="Addresses" count={data.addresses.length} onExport={exportAddresses} onImport={()=>addressImportRef.current?.click()}/><BackupRow title="Orders" count={data.orders.length} onExport={()=>downloadBackup("orders",data.orders)} onImport={()=>orderImportRef.current?.click()}/><BackupRow title="Products" count={products.length} onExport={()=>downloadBackup("products",products)} onImport={()=>productImportRef.current?.click()}/><BackupRow title="Road draft" count={roadNetwork.paths.length} onExport={()=>downloadBackup("roads",roadNetwork)} onImport={()=>roadImportRef.current?.click()}/><BackupRow title="Full app" count={data.addresses.length+data.orders.length+products.length+roadNetwork.paths.length} onExport={()=>downloadBackup("data",{...data,roadNetwork})} onImport={()=>fullImportRef.current?.click()}/><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importAddresses(file);}}/><input ref={orderImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"orders");}}/><input ref={productImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"products");}}/><input ref={roadImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importRoadBackup(file);}}/><input ref={fullImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"data");}}/>{addressTransferMessage&&<p>{addressTransferMessage}</p>}</div></section>}
       </section>
       <nav className="bottom-nav" aria-label="Main navigation">
         {(["today", "map", "orders", "products", "addresses"] as AppTab[]).map((tab) => <button key={tab} className={activeTab === tab ? "active" : ""} onClick={() => setActiveTab(tab)}><span>{tab === "today" ? "⌂" : tab === "map" ? "⌖" : tab === "orders" ? "▤" : tab === "products" ? "◇" : "◆"}</span>{tab[0].toUpperCase() + tab.slice(1)}</button>)}

@@ -1,5 +1,5 @@
 export type DeliveryStatus = "preparing" | "ready" | "out-for-delivery" | "delivered" | "cancelled";
-export type AppTab = "today" | "map" | "orders" | "products" | "addresses";
+export type AppTab = "today" | "map" | "orders" | "products" | "addresses" | "settings";
 export type Point = { x: number; y: number };
 
 export type Address = {
