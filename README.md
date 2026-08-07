@@ -1,46 +1,34 @@
-# PHirst House Mapper
+# Sweet Route
 
-A local-first map editor for tracing individual PHirst Park Homes Calamba lots.
+A local-first PWA for managing dessert orders and planning delivery routes inside PHirst Park Homes Calamba.
 
-## Current workflow
+## Features
 
-1. Zoom into a house or lot.
-2. Click every corner in order, following the printed boundary and any angled edges.
-3. Enter Phase, Block, and Lot.
-4. Save the polygon.
-5. Click any saved polygon to edit its address or delete it.
-6. Export JSON or CSV regularly.
+- Pin reusable Phase, Block, and Lot addresses on the subdivision map.
+- Keep multiple orders per address with products, quantities, payment state, and delivery status.
+- Plan an offline delivery route using image-based roads or a validated traced-road network.
+- Track recognized sales by day, week, month, address, and product.
+- Back up and restore addresses, orders, products, road drafts, or the complete app dataset.
+- Install as a PWA from GitHub Pages; all business data remains local to the current browser/device.
 
-The browser stores progress in local storage on the current device. JSON export
-is the full-fidelity backup and includes every polygon vertex. CSV export is
-provided for spreadsheet review.
+## Local development
 
-## Address rules
-
-- Phase 1 has Blocks 3–33.
-- Phase 2 has Blocks 2–24.
-- The large A/B/C section letters are intentionally ignored.
-- IDs use `P1-B007-L060`.
-
-## Development
-
-```text
+```powershell
 npm install
-npm run dev
+npm run dev -- --port 8001
 ```
 
-Build validation:
+Verification:
 
-```text
-npm run build
+```powershell
+npm run lint
+npm test
 ```
 
-## GitHub Pages
+## Data safety
 
-Pushes to `main` run `.github/workflows/deploy-pages.yml`. The workflow creates
-a static export, detects the repository subpath, uploads the Pages artifact,
-and deploys it through GitHub Pages.
+Browser storage is specific to each origin and device. A localhost dataset does not automatically appear on GitHub Pages. Export a **Full app** backup regularly and restore it on another device when needed. Full backups include the road draft; restored road routing is disabled until it is validated again.
 
-Enable **Settings → Pages → Source → GitHub Actions** once for a new repository.
-Browser data is local to each site origin, so localhost records must be exported
-and restored after the first deployment.
+## Deployment
+
+Pushes to `main` run `.github/workflows/deploy-pages.yml` and publish the static PWA to GitHub Pages.

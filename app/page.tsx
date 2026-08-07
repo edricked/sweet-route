@@ -20,6 +20,7 @@ export default function Home() {
   const orderImportRef = useRef<HTMLInputElement>(null);
   const productImportRef = useRef<HTMLInputElement>(null);
   const fullImportRef = useRef<HTMLInputElement>(null);
+  const roadImportRef = useRef<HTMLInputElement>(null);
   const [data, setData, isHydrated] = useLocalAppData();
   const [roadNetwork,setRoadNetwork]=useRoadNetwork();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
@@ -58,6 +59,8 @@ export default function Home() {
   const [editingRoads,setEditingRoads]=useState(false);
   const [activeRoadPathId,setActiveRoadPathId]=useState<string|null>(null);
   const [showRoadValidation,setShowRoadValidation]=useState(false);
+  const [selectedRoadPoint,setSelectedRoadPoint]=useState<{pathId:string;index:number}|null>(null);
+  const [movingRoadPoint,setMovingRoadPoint]=useState(false);
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -210,6 +213,11 @@ export default function Home() {
     };
     if(editingRoads){
       setShowRoadValidation(false);
+      if(movingRoadPoint&&selectedRoadPoint){
+        setRoadNetwork((current)=>({...current,active:false,paths:current.paths.map((path)=>path.id===selectedRoadPoint.pathId?{...path,points:path.points.map((existing,index)=>index===selectedRoadPoint.index?point:existing)}:path)}));
+        setMovingRoadPoint(false);
+        return;
+      }
       setRoadNetwork((current)=>{
         const snapped=nearestRoadPoint(point,current);
         const pathId=activeRoadPathId??makeId("road");
@@ -230,7 +238,23 @@ export default function Home() {
     setRoadNetwork((current)=>({...current,paths:current.paths.flatMap((path)=>path.id!==activeRoadPathId?[path]:path.points.length>1?[{...path,points:path.points.slice(0,-1)}]:[])}));
   }
 
-  function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setShowLayers(false);}
+  function deleteSelectedRoadPoint(){
+    if(!selectedRoadPoint)return;
+    setRoadNetwork((current)=>({...current,active:false,paths:current.paths.flatMap((path)=>{
+      if(path.id!==selectedRoadPoint.pathId)return[path];
+      const points=path.points.filter((_,index)=>index!==selectedRoadPoint.index);
+      return points.length?[{...path,points}]:[];
+    })}));
+    setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowRoadValidation(false);
+  }
+
+  function deleteActiveRoadPath(){
+    if(!activeRoadPathId||!window.confirm("Delete this traced road path?"))return;
+    setRoadNetwork((current)=>({...current,active:false,paths:current.paths.filter((path)=>path.id!==activeRoadPathId)}));
+    setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowRoadValidation(false);
+  }
+
+  function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowLayers(false);}
 
   function saveEntry() {
     const numericLot = Number(lot);
@@ -342,7 +366,7 @@ export default function Home() {
     setData((current)=>({...current,addresses:current.addresses.filter((address)=>address.id!==addressId),orders:current.orders.filter((order)=>order.addressId!==addressId),routeStartAddressId:current.routeStartAddressId===addressId?undefined:current.routeStartAddressId}));
     setSelectedAddressId(null);setSelectedOrderId(null);
   }
-  function updateOrder(orderId:string,patch:Partial<Pick<Order,"customerName"|"phone"|"items"|"notes"|"paymentStatus">>){setData((current)=>({...current,orders:current.orders.map((order)=>order.id===orderId?{...order,...patch}:order)}));}
+  function updateOrder(orderId:string,patch:Partial<Pick<Order,"customerName"|"phone"|"items"|"notes"|"paymentStatus"|"lineItems"|"total">>){setData((current)=>({...current,orders:current.orders.map((order)=>order.id===orderId?{...order,...patch}:order)}));}
   function deleteOrder(orderId:string){if(!window.confirm("Delete this order? This cannot be undone."))return;setData((current)=>({...current,orders:current.orders.filter((order)=>order.id!==orderId)}));setSelectedOrderId(null);setPendingRouteStartOrderId(null);}
   function updateProduct(productId:string,patch:Pick<Product,"name"|"price">){setData((current)=>({...current,products:current.products.map((product)=>product.id===productId?{...product,...patch}:product)}));}
   function deleteProduct(productId:string){if(!window.confirm("Delete this product? Existing orders will keep their saved product details."))return;setData((current)=>({...current,products:current.products.filter((product)=>product.id!==productId)}));}
@@ -352,15 +376,25 @@ export default function Home() {
     try{
       const parsed=JSON.parse(await file.text()) as Record<string,unknown>;if(parsed.type!==`sweet-route-${type}`)throw new Error("Wrong backup type");
       if(type==="data"){
-        const restored=parsed.data as AppData;if(!restored||!Array.isArray(restored.addresses)||!Array.isArray(restored.orders)||!Array.isArray(restored.products))throw new Error("Invalid full backup");
+        const restored=parsed.data as AppData&{roadNetwork?:typeof roadNetwork};if(!restored||!Array.isArray(restored.addresses)||!Array.isArray(restored.orders)||!Array.isArray(restored.products))throw new Error("Invalid full backup");
         if(!window.confirm("Replace all local addresses, orders, and products with this full backup?"))return;
-        setData(restored);setAddressTransferMessage("Full backup restored.");return;
+        setData({addresses:restored.addresses,orders:restored.orders,products:restored.products,routeStartAddressId:restored.routeStartAddressId});if(restored.roadNetwork?.version===1&&Array.isArray(restored.roadNetwork.paths))setRoadNetwork(restored.roadNetwork);setAddressTransferMessage("Full backup restored, including its road draft when available.");return;
       }
       const records=parsed[type];if(!Array.isArray(records))throw new Error("Invalid backup");
       setData((current)=>{const merged=new Map((current[type] as Array<{id:string}>).map((record)=>[record.id,record]));(records as Array<{id:string}>).filter((record)=>record&&typeof record.id==="string").forEach((record)=>merged.set(record.id,record));return{...current,[type]:[...merged.values()]};});
       setAddressTransferMessage(`${records.length} ${type} restored; existing records were kept.`);
     }catch{setAddressTransferMessage(`That file is not a valid Sweet Route ${type} backup.`);}
     finally{if(orderImportRef.current)orderImportRef.current.value="";if(productImportRef.current)productImportRef.current.value="";if(fullImportRef.current)fullImportRef.current.value="";}
+  }
+
+  async function importRoadBackup(file:File){
+    try{
+      const parsed=JSON.parse(await file.text()) as {type?:string;roads?:typeof roadNetwork};
+      if(parsed.type!=="sweet-route-roads"||parsed.roads?.version!==1||!Array.isArray(parsed.roads.paths))throw new Error("Invalid road backup");
+      if(!window.confirm("Replace the current road draft with this backup?"))return;
+      setRoadNetwork({...parsed.roads,active:false});setAddressTransferMessage(`${parsed.roads.paths.length} road path${parsed.roads.paths.length===1?"":"s"} restored. Validate before activation.`);
+    }catch{setAddressTransferMessage("That file is not a valid Sweet Route road backup.");}
+    finally{if(roadImportRef.current)roadImportRef.current.value="";}
   }
 
   function exportAddresses() {
@@ -503,7 +537,7 @@ export default function Home() {
                   ))}
                 </svg>
               )}
-              {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g className={path.points.length<2?"incomplete-path":undefined} key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>{path.points.length===1&&<circle className="incomplete-halo" cx={path.points[0].x*2100} cy={path.points[0].y*1600} r="24"/>}{path.points.map((point,index)=><circle key={index} cx={point.x*2100} cy={point.y*1600} r="9"/>)}</g>)}{roadGeometryResult.offRoadSegments.map(({pathIndex,segmentIndex})=>{const points=roadNetwork.paths[pathIndex]?.points.slice(segmentIndex,segmentIndex+2)??[];return points.length===2?<polyline className="off-road" key={`${pathIndex}:${segmentIndex}`} points={points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>:null;})}</svg>}
+              {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g className={path.points.length<2?"incomplete-path":undefined} key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>{path.points.length===1&&<circle className="incomplete-halo" cx={path.points[0].x*2100} cy={path.points[0].y*1600} r="24"/>}{path.points.map((point,index)=><circle className={selectedRoadPoint?.pathId===path.id&&selectedRoadPoint.index===index?"selected-road-point":undefined} key={index} cx={point.x*2100} cy={point.y*1600} r="9" onClick={(event)=>{event.stopPropagation();setActiveRoadPathId(path.id);setSelectedRoadPoint({pathId:path.id,index});setMovingRoadPoint(false);}}/>)}</g>)}{roadGeometryResult.offRoadSegments.map(({pathIndex,segmentIndex})=>{const points=roadNetwork.paths[pathIndex]?.points.slice(segmentIndex,segmentIndex+2)??[];return points.length===2?<polyline className="off-road" key={`${pathIndex}:${segmentIndex}`} points={points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>:null;})}</svg>}
               {data.addresses.filter((address) => showAllAddresses || address.isOwner || data.orders.some((order) => order.addressId === address.id && !["delivered", "cancelled"].includes(order.status))).map((address) => (
                 <button key={address.id} className={`address-pin ${address.isOwner ? "owner" : ""} ${selectedAddressId === address.id ? "selected" : ""}`} style={{ left: `${address.x * 100}%`, top: `${address.y * 100}%` }} title={addressLabel(address)} onClick={(event) => { event.stopPropagation(); setSelectedAddressId(address.id); }}>
                   {address.isOwner ? "⌂" : "●"}
@@ -515,7 +549,7 @@ export default function Home() {
           </div>
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
           <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
-          {editingRoads?<div className="road-editor-toolbar"><div><strong>Trace road centers</strong><small>{roadValidation.incompletePaths?"The pulsing red marker is an unfinished path. Add another point or undo it.":"Saved as a draft. Current delivery routing will not change."}</small></div><button disabled={!activeRoadPathId} onClick={undoRoadPoint}>Undo</button><button onClick={()=>setActiveRoadPathId(null)}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){setRoadNetwork({version:1,paths:[],active:false});setActiveRoadPathId(null);}}}>Clear</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
+          {editingRoads?<div className="road-editor-toolbar"><div><strong>{movingRoadPoint?"Tap the corrected road position":"Trace road centers"}</strong><small>{selectedRoadPoint?"Selected point can be moved or deleted.":roadValidation.incompletePaths?"The pulsing red marker is an unfinished path. Select it to continue or delete it.":"Tap a point to edit it, or tap the road to keep tracing."}</small></div><button disabled={!activeRoadPathId} onClick={undoRoadPoint}>Undo</button><button disabled={!selectedRoadPoint} onClick={()=>setMovingRoadPoint(true)}>Move point</button><button disabled={!selectedRoadPoint} onClick={deleteSelectedRoadPoint}>Delete point</button><button disabled={!activeRoadPathId} onClick={deleteActiveRoadPath}>Delete path</button><button onClick={()=>{setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);}}>New path</button><button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){setRoadNetwork({version:1,paths:[],active:false});setActiveRoadPathId(null);setSelectedRoadPoint(null);}}}>Clear</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
         </section>
 
         <aside className={`entry-panel ${!owner && !pendingPoint ? "owner-required" : ""}`}>
@@ -536,12 +570,12 @@ export default function Home() {
               {entryMode==="address"&&<><p className="prefilled-address full">{addressPrefilled?"Address copied from your search. ":""}Tap confirmed—add an optional customer name or contact.</p><label className="full">Customer name<input value={customerName} onChange={(event)=>setCustomerName(event.target.value)} placeholder="Optional"/></label><label className="full">Contact<input value={phone} onChange={(event)=>setPhone(event.target.value)} placeholder="Optional"/></label></>}
               <button className="primary-button full" disabled={!lot || (entryMode === "order" && (!customerName || !items))} onClick={saveEntry}>{entryMode === "owner" ? "Save owner home" : entryMode==="address"?"Save address pin":"Add order and pin"}</button>
             </div>
-          </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdate={updateOrder} onDelete={deleteOrder} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} onUpdateAddress={updateAddress} onDeleteAddress={deleteAddress} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : entryMode==="address" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap Phase {phase}, Block {block}, Lot {lot}</strong><small>Drag or zoom first, then tap its exact position.</small></div></div> : !owner && entryMode === "owner" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap your home lot</strong><small>Drag or zoom the map first.</small></div></div> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
+          </> : selectedOrder ? <OrderDetails order={selectedOrder} address={data.addresses.find((item) => item.id === selectedOrder.addressId)} products={products} routeStartAddressId={data.routeStartAddressId} showRouteStartPrompt={pendingRouteStartOrderId === selectedOrder.id} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdate={updateOrder} onDelete={deleteOrder} onClose={() => { setPendingRouteStartOrderId(null); setSelectedOrderId(null); setSelectedAddressId(null); }} /> : selectedAddress && !selectedAddress.isOwner ? <AddressDetails address={selectedAddress} orders={data.orders.filter((order) => order.addressId === selectedAddress.id)} products={products} routeStartAddressId={data.routeStartAddressId} pendingRouteStartOrderId={pendingRouteStartOrderId} onStatus={updateStatus} onRouteStart={updateRouteStart} onUpdateOrder={updateOrder} onDeleteOrder={deleteOrder} onUpdateAddress={updateAddress} onDeleteAddress={deleteAddress} onAdd={() => beginOrderForAddress(selectedAddress)} onClose={() => { setPendingRouteStartOrderId(null); setSelectedAddressId(null); }} /> : entryMode==="address" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap Phase {phase}, Block {block}, Lot {lot}</strong><small>Drag or zoom first, then tap its exact position.</small></div></div> : !owner && entryMode === "owner" ? <div className="owner-tap-hint"><span>⌖</span><div><strong>Tap your home lot</strong><small>Drag or zoom the map first.</small></div></div> : <div className="empty-entry"><div className="tap-icon">⌖</div><h2>{owner ? "Tap a customer lot" : "Set your home first"}</h2><p>{owner ? "A form will open with the exact pixel you tapped." : "Save your delivery start point before adding orders."}</p><button className="primary-button" onClick={owner ? beginOrder : beginOwnerSetup}>{owner ? "Add order" : "Set owner home"}</button></div>}
         </aside>
         {activeTab === "addresses" && <section className="settings-overlay address-book">
           <div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses & backups</h2></div><button className="primary-button" onClick={()=>beginAddressRegistration()}>+ Register on map</button></div>
           <AddressSearch phase={addressSearchPhase} block={addressSearchBlock} lot={addressSearchLot} resultCount={addressMatches.length} active={addressSearchActive} onPhase={(next)=>{setAddressSearchPhase(next);setAddressSearchBlock(VALID_BLOCKS[next][0]);}} onBlock={setAddressSearchBlock} onLot={setAddressSearchLot} onClear={()=>setAddressSearchLot("")} onAdd={()=>beginAddressRegistration({phase:addressSearchPhase,block:addressSearchBlock,lot:searchedLot})}/>
-          <div className="backup-center"><BackupRow title="Addresses" count={data.addresses.length} onExport={exportAddresses} onImport={()=>addressImportRef.current?.click()}/><BackupRow title="Orders" count={data.orders.length} onExport={()=>downloadBackup("orders",data.orders)} onImport={()=>orderImportRef.current?.click()}/><BackupRow title="Products" count={products.length} onExport={()=>downloadBackup("products",products)} onImport={()=>productImportRef.current?.click()}/><BackupRow title="Full app" count={data.addresses.length+data.orders.length+products.length} onExport={()=>downloadBackup("data",data)} onImport={()=>fullImportRef.current?.click()}/><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importAddresses(file);}}/><input ref={orderImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"orders");}}/><input ref={productImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"products");}}/><input ref={fullImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"data");}}/>{addressTransferMessage&&<p>{addressTransferMessage}</p>}</div>
+          <div className="backup-center"><BackupRow title="Addresses" count={data.addresses.length} onExport={exportAddresses} onImport={()=>addressImportRef.current?.click()}/><BackupRow title="Orders" count={data.orders.length} onExport={()=>downloadBackup("orders",data.orders)} onImport={()=>orderImportRef.current?.click()}/><BackupRow title="Products" count={products.length} onExport={()=>downloadBackup("products",products)} onImport={()=>productImportRef.current?.click()}/><BackupRow title="Road draft" count={roadNetwork.paths.length} onExport={()=>downloadBackup("roads",roadNetwork)} onImport={()=>roadImportRef.current?.click()}/><BackupRow title="Full app" count={data.addresses.length+data.orders.length+products.length+roadNetwork.paths.length} onExport={()=>downloadBackup("data",{...data,roadNetwork})} onImport={()=>fullImportRef.current?.click()}/><input ref={addressImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importAddresses(file);}}/><input ref={orderImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"orders");}}/><input ref={productImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"products");}}/><input ref={roadImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importRoadBackup(file);}}/><input ref={fullImportRef} type="file" accept="application/json,.json" onChange={(event)=>{const file=event.target.files?.[0];if(file)void importBackup(file,"data");}}/>{addressTransferMessage&&<p>{addressTransferMessage}</p>}</div>
           {owner&&<button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}
           {addressMatches.map((address)=><div className="address-book-row" key={address.id}><button className="address-main" onClick={()=>{setSelectedAddressId(address.id);setSelectedOrderId(null);setActiveTab("map");}}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order)=>order.addressId===address.id).length} order(s)</small></div></button><button className="address-add" onClick={()=>beginOrderForAddress(address)}>+ Order</button></div>)}
           {!addressMatches.length&&!addressSearchActive&&<div className="empty-list">No customer addresses yet. Import a backup or register a new one on the map.</div>}
