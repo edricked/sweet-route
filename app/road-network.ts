@@ -1,7 +1,7 @@
 import { Point } from "./domain";
 
 export type RoadPath = { id: string; points: Point[] };
-export type RoadNetwork = { version: 1; paths: RoadPath[]; active?: boolean };
+export type RoadNetwork = { version: 1; paths: RoadPath[]; active?: boolean; approvedWalkways?: string[] };
 export type RoadNetworkValidation = {
   valid: boolean;
   usablePaths: number;
