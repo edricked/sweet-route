@@ -264,6 +264,26 @@ export default function Home() {
     setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowRoadValidation(false);
   }
 
+  function insertRoadPoint(pathId:string,event:React.MouseEvent<SVGPolylineElement>){
+    event.stopPropagation();
+    if(!mapRef.current)return;
+    const path=roadNetwork.paths.find((candidate)=>candidate.id===pathId);if(!path||path.points.length<2)return;
+    const rect=mapRef.current.getBoundingClientRect();
+    const target={x:Math.min(1,Math.max(0,(event.clientX-rect.left)/rect.width)),y:Math.min(1,Math.max(0,(event.clientY-rect.top)/rect.height))};
+    let bestIndex=0,bestDistance=Infinity,bestPoint=target;
+    for(let index=0;index<path.points.length-1;index++){
+      const start=path.points[index],end=path.points[index+1],dx=(end.x-start.x)*2100,dy=(end.y-start.y)*1600;
+      const px=(target.x-start.x)*2100,py=(target.y-start.y)*1600,lengthSquared=dx*dx+dy*dy;
+      const ratio=lengthSquared?Math.max(0,Math.min(1,(px*dx+py*dy)/lengthSquared)):0;
+      const projected={x:start.x+(end.x-start.x)*ratio,y:start.y+(end.y-start.y)*ratio};
+      const nextDistance=Math.hypot((target.x-projected.x)*2100,(target.y-projected.y)*1600);
+      if(nextDistance<bestDistance){bestDistance=nextDistance;bestIndex=index;bestPoint=projected;}
+    }
+    const insertedIndex=bestIndex+1;
+    commitRoadEdit((current)=>({...current,active:false,paths:current.paths.map((candidate)=>candidate.id===pathId?{...candidate,points:[...candidate.points.slice(0,insertedIndex),bestPoint,...candidate.points.slice(insertedIndex)]}:candidate)}));
+    setActiveRoadPathId(pathId);setSelectedRoadPoint({pathId,index:insertedIndex});setMovingRoadPoint(false);setShowRoadValidation(false);
+  }
+
   function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);roadUndoStackRef.current=[];setRoadUndoCount(0);setShowLayers(false);}
 
   function saveEntry() {
@@ -547,7 +567,7 @@ export default function Home() {
                   ))}
                 </svg>
               )}
-              {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g className={path.points.length<2?"incomplete-path":undefined} key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>{path.points.length===1&&<circle className="incomplete-halo" cx={path.points[0].x*2100} cy={path.points[0].y*1600} r="24"/>}{path.points.map((point,index)=><circle className={selectedRoadPoint?.pathId===path.id&&selectedRoadPoint.index===index?"selected-road-point":undefined} key={index} cx={point.x*2100} cy={point.y*1600} r="9" onClick={(event)=>{event.stopPropagation();setActiveRoadPathId(path.id);setSelectedRoadPoint({pathId:path.id,index});setMovingRoadPoint(false);}}/>)}</g>)}{roadGeometryResult.offRoadSegments.map(({pathIndex,segmentIndex})=>{const points=roadNetwork.paths[pathIndex]?.points.slice(segmentIndex,segmentIndex+2)??[];return points.length===2?<polyline className="off-road" key={`${pathIndex}:${segmentIndex}`} points={points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>:null;})}</svg>}
+              {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g className={path.points.length<2?"incomplete-path":undefined} key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")} onClick={(event)=>insertRoadPoint(path.id,event)}/>{path.points.length===1&&<circle className="incomplete-halo" cx={path.points[0].x*2100} cy={path.points[0].y*1600} r="24"/>}{path.points.map((point,index)=><circle className={selectedRoadPoint?.pathId===path.id&&selectedRoadPoint.index===index?"selected-road-point":undefined} key={index} cx={point.x*2100} cy={point.y*1600} r="9" onClick={(event)=>{event.stopPropagation();setActiveRoadPathId(path.id);setSelectedRoadPoint({pathId:path.id,index});setMovingRoadPoint(false);}}/>)}</g>)}{roadGeometryResult.offRoadSegments.map(({pathIndex,segmentIndex})=>{const points=roadNetwork.paths[pathIndex]?.points.slice(segmentIndex,segmentIndex+2)??[];return points.length===2?<polyline className="off-road" key={`${pathIndex}:${segmentIndex}`} points={points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")}/>:null;})}</svg>}
               {data.addresses.filter((address) => showAllAddresses || address.isOwner || data.orders.some((order) => order.addressId === address.id && !["delivered", "cancelled"].includes(order.status))).map((address) => (
                 <button key={address.id} className={`address-pin ${address.isOwner ? "owner" : ""} ${selectedAddressId === address.id ? "selected" : ""}`} style={{ left: `${address.x * 100}%`, top: `${address.y * 100}%` }} title={addressLabel(address)} onClick={(event) => { event.stopPropagation(); setSelectedAddressId(address.id); }}>
                   {address.isOwner ? "⌂" : "●"}
