@@ -441,7 +441,7 @@ export default function Home() {
     setData((current)=>({...current,addresses:current.addresses.filter((address)=>address.id!==addressId),orders:current.orders.filter((order)=>order.addressId!==addressId),routeStartAddressId:current.routeStartAddressId===addressId?undefined:current.routeStartAddressId}));
     setSelectedAddressId(null);setSelectedOrderId(null);
   }
-  function updateOrder(orderId:string,patch:Partial<Pick<Order,"customerName"|"phone"|"items"|"notes"|"paymentStatus"|"lineItems"|"total">>){setData((current)=>({...current,orders:current.orders.map((order)=>order.id===orderId?{...order,...patch}:order)}));}
+  function updateOrder(orderId:string,patch:Partial<Pick<Order,"customerName"|"phone"|"items"|"notes"|"paymentStatus"|"paymentMethod"|"lineItems"|"total">>){setData((current)=>({...current,orders:current.orders.map((order)=>order.id===orderId?{...order,...patch}:order)}));}
   function deleteOrder(orderId:string){if(!window.confirm("Delete this order? This cannot be undone."))return;setData((current)=>({...current,orders:current.orders.filter((order)=>order.id!==orderId)}));setSelectedOrderId(null);setPendingRouteStartOrderId(null);}
   function updateProduct(productId:string,patch:Pick<Product,"name"|"price">){setData((current)=>({...current,products:current.products.map((product)=>product.id===productId?{...product,...patch}:product)}));}
   function deleteProduct(productId:string){if(!window.confirm("Delete this product? Existing orders will keep their saved product details."))return;setData((current)=>({...current,products:current.products.filter((product)=>product.id!==productId)}));}
