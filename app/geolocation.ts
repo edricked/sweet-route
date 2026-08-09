@@ -126,6 +126,13 @@ export function captureAccuratePosition(durationMs=9000):Promise<GeoReading> {
     const readings:GeoReading[]=[];let finished=false,watchId=0;
     const finish=(error?:Error)=>{if(finished)return;finished=true;navigator.geolocation.clearWatch(watchId);window.clearTimeout(timer);const acceptable=readings.filter((reading)=>reading.accuracy<=15);const reading=smoothReadings(acceptable);if(error||!reading)reject(error??new Error("GPS accuracy stayed above 15 metres. Move outdoors and retry."));else resolve(reading);};
     const timer=window.setTimeout(()=>finish(),durationMs);
-    watchId=navigator.geolocation.watchPosition((position)=>{const reading=readingFromPosition(position);readings.push(reading);if(readings.filter((item)=>item.accuracy<=5).length>=5)finish();},(error)=>finish(new Error(error.message)),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+    watchId=navigator.geolocation.watchPosition((position)=>{const reading=readingFromPosition(position);readings.push(reading);if(readings.filter((item)=>item.accuracy<=5).length>=5)finish();},(error)=>{
+      const message=error.code===error.PERMISSION_DENIED
+        ? "Location access is denied. Enable Precise Location for Safari Websites, then reopen Sweet Route."
+        : error.code===error.POSITION_UNAVAILABLE
+          ? "Your location is unavailable. Move outdoors and try again."
+          : "GPS timed out. Move outdoors, keep the screen awake, and try again.";
+      finish(new Error(message));
+    },{enableHighAccuracy:true,maximumAge:0,timeout:15000});
   });
 }
