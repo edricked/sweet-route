@@ -1,7 +1,18 @@
 import { Point } from "./domain";
 
-export type RoadPath = { id: string; points: Point[] };
-export type RoadNetwork = { version: 1; paths: RoadPath[]; active?: boolean; approvedWalkways?: string[] };
+export type RoadPoint = Point & { id: string };
+export type CalibrationAnchor = {
+  id: string;
+  roadPointId: string;
+  x: number;
+  y: number;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  capturedAt: string;
+};
+export type RoadPath = { id: string; points: RoadPoint[] };
+export type RoadNetwork = { version: 1; paths: RoadPath[]; active?: boolean; approvedWalkways?: string[]; calibrationAnchors?: CalibrationAnchor[] };
 export type RoadNetworkValidation = {
   valid: boolean;
   usablePaths: number;
@@ -11,6 +22,23 @@ export type RoadNetworkValidation = {
 };
 
 export const EMPTY_ROAD_NETWORK: RoadNetwork = { version: 1, paths: [], active: false };
+
+export function createRoadPoint(point: Point, id = `road-point-${crypto.randomUUID()}`): RoadPoint {
+  return { ...point, id };
+}
+
+export function normalizeRoadNetwork(network: RoadNetwork): RoadNetwork {
+  const paths=network.paths.map((path)=>({
+    ...path,
+    points:path.points.map((point)=>typeof point.id==="string"&&point.id?point:createRoadPoint(point)),
+  }));
+  const pointIds=new Set(paths.flatMap((path)=>path.points.map((point)=>point.id)));
+  return {
+    ...network,
+    paths,
+    calibrationAnchors:(network.calibrationAnchors??[]).filter((anchor)=>pointIds.has(anchor.roadPointId)),
+  };
+}
 
 const MAP_WIDTH = 2100;
 const MAP_HEIGHT = 1600;
@@ -87,7 +115,7 @@ export function connectRoadPoint(point: Point, network: RoadNetwork, maxDistance
   }
   if(!best||best.distance>maxDistance)return{point,network};
   const source=network.paths.find((path)=>path.id===best!.pathId)!;
-  const connectedPoint=best.ratio<.001?source.points[best.segmentIndex]:best.ratio>.999?source.points[best.segmentIndex+1]:best.point;
+  const connectedPoint=best.ratio<.001?source.points[best.segmentIndex]:best.ratio>.999?source.points[best.segmentIndex+1]:createRoadPoint(best.point);
   if(best.ratio<.001||best.ratio>.999)return{point:connectedPoint,network};
   return{
     point:connectedPoint,

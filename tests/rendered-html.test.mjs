@@ -45,3 +45,22 @@ test("keeps routing, sales recognition, and road backups wired", async () => {
   assert.match(orderDetails, /order-line-editor/);
   assert.match(orderDetails, /lineItems:lines/);
 });
+
+test("keeps calibrated live tracking isolated behind explicit controls", async () => {
+  const [page, geolocation, liveTracking, roadNetwork] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/geolocation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/use-live-geolocation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/road-network.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /Start tracking/);
+  assert.match(page, /GPS calibration/);
+  assert.match(page, /LiveLocationOverlay/);
+  assert.match(geolocation, /gpsToImage/);
+  assert.match(geolocation, /snapToRoad/);
+  assert.match(geolocation, /networkForMode/);
+  assert.match(liveTracking, /watchPosition/);
+  assert.match(liveTracking, /wakeLock/);
+  assert.match(roadNetwork, /calibrationAnchors/);
+  assert.match(roadNetwork, /approvedWalkways/);
+});

@@ -5,9 +5,11 @@ import { Address, AppData, AppTab, DeliveryStatus, Order, OrderLine, Product, ST
 import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance, validateRoadGeometry } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
 import { AddressDetails, OrderDetails } from "./order-details";
-import { RoadNetwork, hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
+import { createRoadPoint, normalizeRoadNetwork, RoadNetwork, hasRoadNetwork, nearestRoadPoint, roadNetworkDistance, roadNetworkPath, validateRoadNetwork } from "./road-network";
 import { useRoadNetwork } from "./use-road-network";
 import { SalesDashboard } from "./sales-dashboard";
+import { calibrationMetersPerPixel, calibrationQuality, captureAccuratePosition, GeoReading, gpsToImage, networkForMode, roadSegmentKey as geoRoadSegmentKey, snapToRoad, SnappedRoadPosition, TrackingMode } from "./geolocation";
+import { useLiveGeolocation } from "./use-live-geolocation";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const MAX_MAP_ZOOM = 10;
@@ -22,6 +24,7 @@ export default function Home() {
   const fullImportRef = useRef<HTMLInputElement>(null);
   const roadImportRef = useRef<HTMLInputElement>(null);
   const roadUndoStackRef = useRef<RoadNetwork[]>([]);
+  const previousSnappedPositionRef=useRef<SnappedRoadPosition|null>(null);
   const [data, setData, isHydrated] = useLocalAppData();
   const [roadNetwork,setRoadNetwork]=useRoadNetwork();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
@@ -64,6 +67,11 @@ export default function Home() {
   const [selectedRoadPoint,setSelectedRoadPoint]=useState<{pathId:string;index:number}|null>(null);
   const [movingRoadPoint,setMovingRoadPoint]=useState(false);
   const [roadUndoCount,setRoadUndoCount]=useState(0);
+  const [trackingMode,setTrackingMode]=useState<TrackingMode>("vehicle");
+  const [capturingGps,setCapturingGps]=useState(false);
+  const [gpsMessage,setGpsMessage]=useState("");
+  const [testGpsReading,setTestGpsReading]=useState<GeoReading|null>(null);
+  const {status:trackingStatus,reading:liveGpsReading,error:trackingError,start:startGeolocation,stop:stopGeolocation}=useLiveGeolocation();
 
   useEffect(() => {
     // If the map image was already cached by the browser, it can finish loading
@@ -108,15 +116,29 @@ export default function Home() {
   const roadSegmentKey=(pathIndex:number,segmentIndex:number)=>{
     const points=roadNetwork.paths[pathIndex]?.points.slice(segmentIndex,segmentIndex+2)??[];
     if(points.length!==2)return"";
-    const keys=points.map((point)=>`${point.x.toFixed(6)}:${point.y.toFixed(6)}`).sort();
-    return keys.join("|");
+    return geoRoadSegmentKey(points[0],points[1]);
   };
   const approvedWalkwayKeys=new Set(roadNetwork.approvedWalkways??[]);
   const unapprovedOffRoadSegments=roadGeometryResult.offRoadSegments.filter(({pathIndex,segmentIndex})=>!approvedWalkwayKeys.has(roadSegmentKey(pathIndex,segmentIndex)));
   const roadGeometry={...roadGeometryResult,offRoadSegments:unapprovedOffRoadSegments.length};
   const roadGeometryValid=roadGeometry.sampledPoints>0&&roadGeometry.offRoadSegments===0;
   const roadDraftValid=roadValidation.valid&&roadGeometryValid;
-  const deliveryDistance=(from:Address,to:Address)=>graphReady?roadNetworkDistance(from,to,roadNetwork):roadOrStraightDistance(from,to,roadMask);
+  const calibrationAnchors=roadNetwork.calibrationAnchors??[];
+  const gpsCalibration=calibrationQuality(calibrationAnchors),metersPerPixel=calibrationMetersPerPixel(calibrationAnchors);
+  const selectedRoadPointValue=selectedRoadPoint?roadNetwork.paths.find((path)=>path.id===selectedRoadPoint.pathId)?.points[selectedRoadPoint.index]??null:null;
+  const selectedCalibrationAnchor=selectedRoadPointValue?calibrationAnchors.find((anchor)=>anchor.roadPointId===selectedRoadPointValue.id)??null:null;
+  const trackingNetwork=useMemo(()=>networkForMode(roadNetwork,trackingMode),[roadNetwork,trackingMode]);
+  const trackingActive=trackingStatus==="tracking"&&gpsCalibration.ready&&roadDraftValid;
+  const currentGpsReading=liveGpsReading??testGpsReading;
+  const rawGpsPoint=useMemo(()=>currentGpsReading?gpsToImage(currentGpsReading,calibrationAnchors):null,[currentGpsReading,calibrationAnchors]);
+  const snappedGpsPosition=useMemo(()=>trackingActive&&rawGpsPoint?snapToRoad(rawGpsPoint,trackingNetwork,previousSnappedPositionRef.current):null,[trackingActive,rawGpsPoint,trackingNetwork]);
+  useEffect(()=>{if(snappedGpsPosition)previousSnappedPositionRef.current=snappedGpsPosition;else if(!trackingActive)previousSnappedPositionRef.current=null;},[snappedGpsPosition,trackingActive]);
+  const liveRoutePoint=trackingActive&&snappedGpsPosition?snappedGpsPosition:null;
+  const displayedGpsPoint=trackingActive?(snappedGpsPosition??rawGpsPoint):rawGpsPoint;
+  const gpsOutsideMap=Boolean(rawGpsPoint&&(rawGpsPoint.x<0||rawGpsPoint.x>1||rawGpsPoint.y<0||rawGpsPoint.y>1));
+  const accuracyRadiusPixels=currentGpsReading&&metersPerPixel?Math.min(160,Math.max(12,currentGpsReading.accuracy/metersPerPixel)):24;
+  const routingNetwork=trackingActive?trackingNetwork:roadNetwork,routingGraphReady=trackingActive||graphReady;
+  const deliveryDistance=(from:{x:number;y:number},to:{x:number;y:number})=>routingGraphReady?roadNetworkDistance(from,to,routingNetwork):roadOrStraightDistance(from,to,roadMask);
   const suggestedRoute = useMemo(() => {
     if (!routeStart) return [];
     const candidates = [...new Map(data.orders
@@ -125,7 +147,7 @@ export default function Home() {
       .values()]
       .filter((address): address is Address => Boolean(address));
     const ordered: Address[] = [];
-    let current: Address = routeStart;
+    let current: {x:number;y:number} = liveRoutePoint??routeStart;
     const remaining = [...candidates];
     while (remaining.length) {
       let bestIndex = 0;
@@ -134,31 +156,36 @@ export default function Home() {
         const d = deliveryDistance(current, remaining[index]);
         if (d < bestDist) { bestDist = d; bestIndex = index; }
       }
-      current = remaining.splice(bestIndex, 1)[0];
-      ordered.push(current);
+      const selected=remaining.splice(bestIndex, 1)[0];
+      current=selected;
+      ordered.push(selected);
     }
     return ordered;
   // deliveryDistance is intentionally derived from these routing inputs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.addresses, data.orders, routeStart, roadMask,roadNetwork,graphReady]);
+  }, [data.addresses, data.orders, routeStart, roadMask,roadNetwork,graphReady,liveRoutePoint,trackingNetwork,trackingActive]);
   const manuallyPlannedRoute = routeAddressIds
     .map((id) => data.addresses.find((address) => address.id === id))
     .filter((address): address is Address => Boolean(address))
     .filter((address) => data.orders.some((order) => order.addressId === address.id && order.status === "out-for-delivery"));
   const routeAddresses = routeVisible ? (manuallyPlannedRoute.length ? manuallyPlannedRoute : suggestedRoute) : [];
-  const routeKey = `${routeStart?.id ?? ""}:${routeAddresses.map((address) => address.id).join(",")}`;
+  const routeKey = `${routeStart?.id ?? ""}:${liveRoutePoint?`${liveRoutePoint.x.toFixed(5)},${liveRoutePoint.y.toFixed(5)}`:"home"}:${trackingMode}:${routeAddresses.map((address) => address.id).join(",")}`;
 
   const routePaths = useMemo(() => {
-    if ((!roadMask&&!graphReady) || !routeStart || !routeAddresses.length) return [];
-    let current = routeStart;
+    if ((!roadMask&&!routingGraphReady) || !routeStart || !routeAddresses.length) return [];
+    let current:{x:number;y:number} = liveRoutePoint??routeStart;
     return routeAddresses.map((address) => {
-      const path = graphReady?roadNetworkPath(current,address,roadNetwork):roadPath(current,address,roadMask!);
+      const path = routingGraphReady?roadNetworkPath(current,address,routingNetwork):roadPath(current,address,roadMask!);
       current = address;
       return path;
     }).filter((path) => path.length > 1);
   // routeKey is the stable semantic dependency for the selected route.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roadMask, routeKey,roadNetwork,graphReady]);
+  }, [roadMask, routeKey,routingNetwork,routingGraphReady,routeStart,routeAddresses,liveRoutePoint]);
+  const remainingRouteMeters=trackingActive&&metersPerPixel&&routePaths[0]?.length>1?routePaths[0].slice(1).reduce((sum,point,index)=>sum+Math.hypot((point.x-routePaths[0][index].x)*2100,(point.y-routePaths[0][index].y)*1600),0)*metersPerPixel:null;
+  const arrivalState=remainingRouteMeters===null?null:remainingRouteMeters<=Math.max(12,(liveGpsReading?.accuracy??5)*1.5)?"arrived":remainingRouteMeters<=30?"approaching":null;
+  const activeDestination=routeAddresses[0]??null;
+  const activeDestinationOrder=activeDestination?data.orders.find((order)=>order.addressId===activeDestination.id&&order.status==="out-for-delivery")??null:null;
 
   function resetForm() {
     setPendingPoint(null);
@@ -226,7 +253,7 @@ export default function Home() {
     if(editingRoads){
       setShowRoadValidation(false);
       if(movingRoadPoint&&selectedRoadPoint){
-        commitRoadEdit((current)=>({...current,active:false,paths:current.paths.map((path)=>path.id===selectedRoadPoint.pathId?{...path,points:path.points.map((existing,index)=>index===selectedRoadPoint.index?point:existing)}:path)}));
+        commitRoadEdit((current)=>{const moved=current.paths.find((path)=>path.id===selectedRoadPoint.pathId)?.points[selectedRoadPoint.index];return {...current,active:false,paths:current.paths.map((path)=>path.id===selectedRoadPoint.pathId?{...path,points:path.points.map((existing,index)=>index===selectedRoadPoint.index?{...existing,...point}:existing)}:path),calibrationAnchors:(current.calibrationAnchors??[]).map((anchor)=>anchor.roadPointId===moved?.id?{...anchor,...point}:anchor)};});
         setMovingRoadPoint(false);
         return;
       }
@@ -234,7 +261,8 @@ export default function Home() {
       commitRoadEdit((current)=>{
         const pathId=activeRoadPathId??makeId("road");
         if(!activeRoadPathId)setActiveRoadPathId(pathId);
-        const nextPoint=activeRoadPathId?nearestRoadPoint(point,current):point;
+        const candidate=activeRoadPathId?nearestRoadPoint(point,current):point;
+        const nextPoint=createRoadPoint(candidate);
         const existing=current.paths.find((path)=>path.id===pathId);
         return {...current,active:false,paths:existing?current.paths.map((path)=>path.id===pathId?{...path,points:[...path.points,nextPoint]}:path):[...current.paths,{id:pathId,points:[nextPoint]}]};
       });
@@ -261,11 +289,19 @@ export default function Home() {
 
   function deleteSelectedRoadPoint(){
     if(!selectedRoadPoint)return;
-    commitRoadEdit((current)=>({...current,active:false,paths:current.paths.flatMap((path)=>{
-      if(path.id!==selectedRoadPoint.pathId)return[path];
-      const points=path.points.filter((_,index)=>index!==selectedRoadPoint.index);
-      return points.length?[{...path,points}]:[];
-    })}));
+    commitRoadEdit((current)=>{
+      const removed=current.paths.find((path)=>path.id===selectedRoadPoint.pathId)?.points[selectedRoadPoint.index];
+      return {
+        ...current,
+        active:false,
+        paths:current.paths.flatMap((path)=>{
+          if(path.id!==selectedRoadPoint.pathId)return[path];
+          const points=path.points.filter((_,index)=>index!==selectedRoadPoint.index);
+          return points.length?[{...path,points}]:[];
+        }),
+        calibrationAnchors:(current.calibrationAnchors??[]).filter((anchor)=>anchor.roadPointId!==removed?.id),
+      };
+    });
     setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowRoadValidation(false);
   }
 
@@ -305,12 +341,12 @@ export default function Home() {
       const nextDistance=Math.hypot((target.x-projected.x)*2100,(target.y-projected.y)*1600);
       if(nextDistance<bestDistance){bestDistance=nextDistance;bestIndex=index;bestPoint=projected;}
     }
-    const insertedIndex=bestIndex+1;
+    const insertedIndex=bestIndex+1,insertedPoint=createRoadPoint(bestPoint);
     if(activeRoadPathId&&activeRoadPathId!==pathId){
-      commitRoadEdit((current)=>({...current,active:false,paths:current.paths.map((candidate)=>candidate.id===pathId?{...candidate,points:[...candidate.points.slice(0,insertedIndex),bestPoint,...candidate.points.slice(insertedIndex)]}:candidate.id===activeRoadPathId?{...candidate,points:[...candidate.points,bestPoint]}:candidate)}));
+      commitRoadEdit((current)=>({...current,active:false,paths:current.paths.map((candidate)=>candidate.id===pathId?{...candidate,points:[...candidate.points.slice(0,insertedIndex),insertedPoint,...candidate.points.slice(insertedIndex)]}:candidate.id===activeRoadPathId?{...candidate,points:[...candidate.points,insertedPoint]}:candidate)}));
       setActiveRoadPathId(null);setSelectedRoadPoint({pathId,index:insertedIndex});setMovingRoadPoint(false);setShowRoadValidation(false);return;
     }
-    commitRoadEdit((current)=>({...current,active:false,paths:current.paths.map((candidate)=>candidate.id===pathId?{...candidate,points:[...candidate.points.slice(0,insertedIndex),bestPoint,...candidate.points.slice(insertedIndex)]}:candidate)}));
+    commitRoadEdit((current)=>({...current,active:false,paths:current.paths.map((candidate)=>candidate.id===pathId?{...candidate,points:[...candidate.points.slice(0,insertedIndex),insertedPoint,...candidate.points.slice(insertedIndex)]}:candidate)}));
     setActiveRoadPathId(pathId);setSelectedRoadPoint({pathId,index:insertedIndex});setMovingRoadPoint(false);setShowRoadValidation(false);
   }
 
@@ -328,6 +364,39 @@ export default function Home() {
     commitRoadEdit((current)=>({...current,active:false,approvedWalkways:(current.approvedWalkways??[]).filter((candidate)=>candidate!==key)}));
     setShowRoadValidation(false);
   }
+
+  async function setGpsAnchor(){
+    if(!selectedRoadPointValue||capturingGps)return;
+    setCapturingGps(true);setGpsMessage("Collecting precise GPS readings…");
+    try{
+      const reading=await captureAccuratePosition();
+      const anchor={id:selectedCalibrationAnchor?.id??makeId("gps-anchor"),roadPointId:selectedRoadPointValue.id,x:selectedRoadPointValue.x,y:selectedRoadPointValue.y,latitude:reading.latitude,longitude:reading.longitude,accuracy:reading.accuracy,capturedAt:new Date(reading.timestamp).toISOString()};
+      commitRoadEdit((current)=>({...current,calibrationAnchors:[...(current.calibrationAnchors??[]).filter((item)=>item.roadPointId!==anchor.roadPointId),anchor]}));
+      setGpsMessage(`GPS anchor saved at ±${Math.round(reading.accuracy)} m.`);
+    }catch(error){setGpsMessage(error instanceof Error?error.message:"Unable to capture GPS.");}
+    finally{setCapturingGps(false);}
+  }
+
+  function removeGpsAnchor(){
+    if(!selectedCalibrationAnchor||!window.confirm("Remove this GPS calibration anchor?"))return;
+    commitRoadEdit((current)=>({...current,calibrationAnchors:(current.calibrationAnchors??[]).filter((anchor)=>anchor.id!==selectedCalibrationAnchor.id)}));setGpsMessage("GPS anchor removed.");
+  }
+
+  async function testCurrentLocation(){
+    if(!gpsCalibration.ready||capturingGps)return;
+    setCapturingGps(true);setGpsMessage("Testing your current location…");
+    try{const reading=await captureAccuratePosition();setTestGpsReading(reading);setGpsMessage(`Test marker placed from a ±${Math.round(reading.accuracy)} m reading.`);}
+    catch(error){setGpsMessage(error instanceof Error?error.message:"Unable to test GPS.");}
+    finally{setCapturingGps(false);}
+  }
+
+  async function startLiveTracking(){
+    if(!gpsCalibration.ready){setGpsMessage("Add at least 3 GPS anchors first.");return;}
+    if(!roadDraftValid){setGpsMessage("Validate the road draft before starting live tracking.");return;}
+    setTestGpsReading(null);setPendingRouteStartOrderId(null);setRouteVisible(true);setGpsMessage("");await startGeolocation();
+  }
+
+  function stopLiveTracking(){stopGeolocation();setTestGpsReading(null);previousSnappedPositionRef.current=null;setGpsMessage("Live tracking stopped. Routes start from home again.");}
 
   function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);roadUndoStackRef.current=[];setRoadUndoCount(0);setShowLayers(false);}
 
@@ -400,7 +469,7 @@ export default function Home() {
 
   function updateStatus(orderId: string, nextStatus: DeliveryStatus) {
     const hasRemainingDelivery = data.orders.some((order) => order.id !== orderId && order.status === "out-for-delivery");
-    setPendingRouteStartOrderId(nextStatus === "delivered" && hasRemainingDelivery ? orderId : null);
+    setPendingRouteStartOrderId(!trackingActive&&nextStatus === "delivered" && hasRemainingDelivery ? orderId : null);
     setData((current) => {
       return {
         ...current,
@@ -453,7 +522,7 @@ export default function Home() {
       if(type==="data"){
         const restored=parsed.data as AppData&{roadNetwork?:typeof roadNetwork};if(!restored||!Array.isArray(restored.addresses)||!Array.isArray(restored.orders)||!Array.isArray(restored.products))throw new Error("Invalid full backup");
         if(!window.confirm("Replace all local addresses, orders, and products with this full backup?"))return;
-        setData({addresses:restored.addresses,orders:restored.orders,products:restored.products,routeStartAddressId:restored.routeStartAddressId});if(restored.roadNetwork?.version===1&&Array.isArray(restored.roadNetwork.paths))setRoadNetwork(restored.roadNetwork);setAddressTransferMessage("Full backup restored, including its road draft when available.");return;
+        setData({addresses:restored.addresses,orders:restored.orders,products:restored.products,routeStartAddressId:restored.routeStartAddressId});if(restored.roadNetwork?.version===1&&Array.isArray(restored.roadNetwork.paths))setRoadNetwork(normalizeRoadNetwork(restored.roadNetwork));setAddressTransferMessage("Full backup restored, including its road draft and GPS anchors when available.");return;
       }
       const records=parsed[type];if(!Array.isArray(records))throw new Error("Invalid backup");
       setData((current)=>{const merged=new Map((current[type] as Array<{id:string}>).map((record)=>[record.id,record]));(records as Array<{id:string}>).filter((record)=>record&&typeof record.id==="string").forEach((record)=>merged.set(record.id,record));return{...current,[type]:[...merged.values()]};});
@@ -467,7 +536,7 @@ export default function Home() {
       const parsed=JSON.parse(await file.text()) as {type?:string;roads?:typeof roadNetwork};
       if(parsed.type!=="sweet-route-roads"||parsed.roads?.version!==1||!Array.isArray(parsed.roads.paths))throw new Error("Invalid road backup");
       if(!window.confirm("Replace the current road draft with this backup?"))return;
-      setRoadNetwork({...parsed.roads,active:false});setAddressTransferMessage(`${parsed.roads.paths.length} road path${parsed.roads.paths.length===1?"":"s"} restored. Validate before activation.`);
+      setRoadNetwork(normalizeRoadNetwork({...parsed.roads,active:false}));setAddressTransferMessage(`${parsed.roads.paths.length} road path${parsed.roads.paths.length===1?"":"s"} restored. Validate before activation.`);
     }catch{setAddressTransferMessage("That file is not a valid Sweet Route road backup.");}
     finally{if(roadImportRef.current)roadImportRef.current.value="";}
   }
@@ -523,6 +592,12 @@ export default function Home() {
     const viewport = mapViewportRef.current;
     const surface = mapRef.current;
     viewport.scrollTo({ left: Math.max(0, owner.x * surface.offsetWidth - viewport.clientWidth / 2), top: Math.max(0, owner.y * surface.offsetHeight - viewport.clientHeight / 2), behavior: "smooth" });
+  }
+
+  function recenterGps(){
+    if(!displayedGpsPoint||!mapViewportRef.current||!mapRef.current)return;
+    const viewport=mapViewportRef.current,surface=mapRef.current;
+    viewport.scrollTo({left:Math.max(0,displayedGpsPoint.x*surface.offsetWidth-viewport.clientWidth/2),top:Math.max(0,displayedGpsPoint.y*surface.offsetHeight-viewport.clientHeight/2),behavior:"smooth"});
   }
 
   function resetMapView() {
@@ -617,6 +692,8 @@ export default function Home() {
                 </svg>
               )}
               {editingRoads&&<svg className="road-editor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="Road network editor">{roadNetwork.paths.map((path)=><g className={path.points.length<2?"incomplete-path":undefined} key={path.id}><polyline className={path.id===activeRoadPathId?"active":""} points={path.points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")} onClick={(event)=>insertRoadPoint(path.id,event)}/>{path.points.length===1&&<circle className="incomplete-halo" cx={path.points[0].x*2100} cy={path.points[0].y*1600} r="24"/>}{path.points.map((point,index)=><circle className={selectedRoadPoint?.pathId===path.id&&selectedRoadPoint.index===index?"selected-road-point":undefined} key={index} cx={point.x*2100} cy={point.y*1600} r="9" onClick={(event)=>{event.stopPropagation();selectOrConnectRoadPoint(path.id,index);}}/>)}</g>)}{roadNetwork.paths.flatMap((path,pathIndex)=>path.points.slice(1).map((_,segmentIndex)=>({pathIndex,segmentIndex}))).filter(({pathIndex,segmentIndex})=>approvedWalkwayKeys.has(roadSegmentKey(pathIndex,segmentIndex))).map(({pathIndex,segmentIndex})=>{const points=roadNetwork.paths[pathIndex].points.slice(segmentIndex,segmentIndex+2),key=roadSegmentKey(pathIndex,segmentIndex);return <polyline className="approved-walkway" key={`walkway:${pathIndex}:${segmentIndex}`} points={points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")} onClick={(event)=>removeWalkwayApproval(key,event)}/>;})}{unapprovedOffRoadSegments.map(({pathIndex,segmentIndex})=>{const points=roadNetwork.paths[pathIndex]?.points.slice(segmentIndex,segmentIndex+2)??[];return points.length===2?<polyline className="off-road" key={`${pathIndex}:${segmentIndex}`} points={points.map((point)=>`${point.x*2100},${point.y*1600}`).join(" ")} onClick={(event)=>approveWalkway(pathIndex,segmentIndex,event)}/>:null;})}</svg>}
+              {!editingRoads&&displayedGpsPoint&&!gpsOutsideMap&&<LiveLocationOverlay point={displayedGpsPoint} accuracyRadius={accuracyRadiusPixels} heading={currentGpsReading?.heading??0} mode={trackingMode} weak={(currentGpsReading?.accuracy??0)>15} testing={!trackingActive}/>}
+              {editingRoads&&calibrationAnchors.length>0&&<svg className="gps-anchor-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label="GPS calibration anchors">{calibrationAnchors.map((anchor)=><g key={anchor.id} transform={`translate(${anchor.x*2100} ${anchor.y*1600})`}><circle r="17"/><path d="M0 -10V10M-10 0H10"/></g>)}</svg>}
               {!editingRoads&&data.addresses.filter((address) => showAllAddresses || address.isOwner || data.orders.some((order) => order.addressId === address.id && !["delivered", "cancelled"].includes(order.status))).map((address) => (
                 <button key={address.id} className={`address-pin ${address.isOwner ? "owner" : ""} ${selectedAddressId === address.id ? "selected" : ""}`} style={{ left: `${address.x * 100}%`, top: `${address.y * 100}%` }} title={addressLabel(address)} onClick={(event) => { event.stopPropagation(); setSelectedAddressId(address.id); }}>
                   {address.isOwner ? "⌂" : "●"}
@@ -626,6 +703,9 @@ export default function Home() {
               {!editingRoads&&pendingPoint && <div className="pending-pin" style={{ left: `${pendingPoint.x * 100}%`, top: `${pendingPoint.y * 100}%` }}>+</div>}
             </div>
           </div>
+          {editingRoads&&<div className="gps-calibration-panel"><div><strong>GPS calibration</strong><span>{gpsCalibration.count} anchor{gpsCalibration.count===1?"":"s"} · {gpsCalibration.recommended?"recommended coverage":gpsCalibration.ready?"basic calibration":"3 required"}</span><small>{gpsCalibration.count?`Average accuracy ±${Math.round(gpsCalibration.averageAccuracy)} m · ${gpsCalibration.quadrants}/4 map areas`:"Select a recognizable road point while standing there."}</small></div><div className="gps-calibration-actions"><button disabled={!selectedRoadPointValue||capturingGps} onClick={()=>void setGpsAnchor()}>{capturingGps?"Reading GPS…":selectedCalibrationAnchor?"Replace GPS anchor":"Set GPS anchor"}</button><button disabled={!selectedCalibrationAnchor||capturingGps} onClick={removeGpsAnchor}>Remove anchor</button><button disabled={!gpsCalibration.ready||capturingGps} onClick={()=>void testCurrentLocation()}>Test my location</button></div>{gpsMessage&&<p>{gpsMessage}</p>}</div>}
+          {!editingRoads&&<div className={`live-tracking-panel ${trackingActive?"active":""}`}><div className="tracking-heading"><div><strong>{trackingActive?"Live delivery tracking":"Live location"}</strong><small>{trackingActive&&remainingRouteMeters!==null?`${Math.max(0,Math.round(remainingRouteMeters))} m to ${activeDestination?addressLabel(activeDestination):"next stop"}`:gpsCalibration.ready?"Calibration ready":"Calibrate 3+ road points first"}</small></div><span className={`tracking-status ${trackingStatus}`}>{trackingActive?`${Math.round(liveGpsReading?.accuracy??0)} m`:trackingStatus}</span></div><div className="tracking-mode" aria-label="Travel mode"><button className={trackingMode==="vehicle"?"active":""} onClick={()=>setTrackingMode("vehicle")}><span>🚗</span>Vehicle</button><button className={trackingMode==="walking"?"active":""} onClick={()=>setTrackingMode("walking")}><span>🚶</span>Walking</button></div><div className="tracking-actions">{trackingStatus==="idle"||trackingStatus==="error"?<button className="tracking-primary" disabled={!gpsCalibration.ready||!roadDraftValid} onClick={()=>void startLiveTracking()}>Start tracking</button>:<button className="tracking-stop" onClick={stopLiveTracking}>Stop</button>}<button disabled={!displayedGpsPoint} onClick={recenterGps}>Center on me</button>{gpsCalibration.ready&&trackingStatus==="idle"&&<button disabled={capturingGps} onClick={()=>void testCurrentLocation()}>Test GPS</button>}</div>{(trackingError||gpsMessage||gpsOutsideMap)&&<p className="tracking-message">{gpsOutsideMap?"GPS position is outside the calibrated map.":trackingError||gpsMessage}</p>}</div>}
+          {!editingRoads&&trackingActive&&arrivalState&&activeDestination&&<div className={`arrival-card ${arrivalState}`}><div><strong>{arrivalState==="arrived"?"You’ve arrived":"Approaching delivery"}</strong><span>{addressLabel(activeDestination)}</span>{activeDestinationOrder&&<small>{activeDestinationOrder.customerName} · {activeDestinationOrder.items}</small>}</div>{arrivalState==="arrived"&&activeDestinationOrder&&<button onClick={()=>{setSelectedOrderId(activeDestinationOrder.id);setSelectedAddressId(activeDestination.id);}}>Open order</button>}</div>}
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
           <div className="map-action-stack"><button onClick={() => setZoom((value) => Math.min(MAX_MAP_ZOOM, value + .25))}>+</button><button onClick={() => setZoom((value) => Math.max(minimumZoom, value - .25))}>−</button><button disabled={!owner} onClick={recenterOwner}>⌂</button></div>
           {editingRoads?<div className="road-editor-toolbar"><div><strong>{movingRoadPoint?"Tap the corrected road position":activeRoadPathId?"Extend the road draft":"Edit one connected road draft"}</strong><small>{activeRoadPathId?"Tap the map to extend, or tap another existing point to connect and finish.":selectedRoadPoint?"Extend, move, or delete this point.":roadNetwork.paths.length?"Select any point, then choose Extend here.":"Tap the first road center to begin."}</small></div><button disabled={!activeRoadPathId&&!roadUndoCount} onClick={undoRoadPoint}>Undo</button><button disabled={!selectedRoadPoint} onClick={extendFromSelectedRoadPoint}>Extend here</button><button disabled={!selectedRoadPoint} onClick={()=>setMovingRoadPoint(true)}>Move point</button><button disabled={!selectedRoadPoint} onClick={deleteSelectedRoadPoint}>Delete point</button>{activeRoadPathId&&<button onClick={()=>{setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);}}>Stop extending</button>}<button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){commitRoadEdit(()=>({version:1,paths:[],active:false}));setActiveRoadPathId(null);setSelectedRoadPoint(null);}}}>Clear draft</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
@@ -666,6 +746,15 @@ export default function Home() {
       </nav>
     </main>
   );
+}
+
+function LiveLocationOverlay({point,accuracyRadius,heading,mode,weak,testing}:{point:{x:number;y:number};accuracyRadius:number;heading:number;mode:TrackingMode;weak:boolean;testing:boolean}){
+  return <svg className={`live-location-layer ${weak?"weak":""} ${testing?"testing":""}`} viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label={testing?"GPS test position":`Live ${mode} position`}>
+    <circle className="gps-accuracy" cx={point.x*2100} cy={point.y*1600} r={accuracyRadius}/>
+    <g className={`live-marker ${mode}`} transform={`translate(${point.x*2100} ${point.y*1600}) rotate(${Number.isFinite(heading)?heading:0})`}>
+      {mode==="vehicle"?<><path className="marker-shadow" d="M-17-23Q0-31 17-23L22 18Q0 29-22 18Z"/><path className="marker-body" d="M-14-21Q0-27 14-21L18 17Q0 24-18 17Z"/><path className="marker-glass" d="M-10-11Q0-16 10-11L12 2H-12Z"/><circle cx="-12" cy="15" r="3"/><circle cx="12" cy="15" r="3"/><path className="marker-direction" d="M0-34 7-24H-7Z"/></>:<><circle className="walker-head" cy="-18" r="7"/><path className="walker-body" d="M0-9 0 7M0-3-11 5M0-2 10 3M0 7-9 21M0 7 11 20"/><path className="marker-direction" d="M0-34 7-24H-7Z"/></>}
+    </g>
+  </svg>;
 }
 
 function BackupRow({title,count,onExport,onImport}:{title:string;count:number;onExport:()=>void;onImport:()=>void}){return <div className="backup-row"><div><strong>{title}</strong><small>{count} record{count===1?"":"s"}</small></div><div><button disabled={!count} onClick={onExport}>Export</button><button onClick={onImport}>Restore</button></div></div>;}

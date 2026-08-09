@@ -144,3 +144,33 @@ button:disabled { cursor:not-allowed; opacity:.5; }
 @media (max-width:720px) { .address-search-fields { grid-template-columns:1fr 1fr; }.address-search-fields label:nth-child(3) { grid-column:1; }.search-result.missing { align-items:flex-start; flex-direction:column; }.search-result.missing button { width:100%; } }
 .settings-overlay .address-search button { width:auto; max-width:none; display:inline-flex; grid-template-columns:none; align-items:center; justify-content:center; gap:0; text-align:center; }
 @media (max-width:720px) { .settings-overlay .search-result.missing button { width:100%; } }
+
+/* Calibrated live location */
+.gps-anchor-layer,.live-location-layer { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+.gps-anchor-layer { z-index:10; }.live-location-layer { z-index:7; }
+.gps-anchor-layer circle { fill:#fff9; stroke:#e11d74; stroke-width:5; }.gps-anchor-layer path { stroke:#e11d74; stroke-width:5; stroke-linecap:round; }
+.gps-accuracy { fill:#23845c22; stroke:#16825288; stroke-width:3; stroke-dasharray:8 6; }
+.live-map-marker { transform-box:fill-box; transform-origin:center; filter:drop-shadow(0 3px 4px #0017); }
+.live-map-marker.testing { opacity:.72; }.live-map-marker.weak { filter:drop-shadow(0 3px 5px #0018) saturate(.65); }
+.live-map-marker .marker-ring { fill:#fff; stroke:#176b45; stroke-width:4; }
+.live-map-marker .car-body { fill:#176b45; stroke:#fff; stroke-width:3; }.live-map-marker .car-glass { fill:#bceee0; }.live-map-marker .car-light { fill:#f5c542; }.live-map-marker .car-wheel { fill:#183328; }
+.live-map-marker .walker-head,.live-map-marker .walker-body { fill:#176b45; stroke:#fff; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+.gps-calibration-panel,.live-tracking-panel,.arrival-card { position:absolute; z-index:29; display:grid; gap:9px; border:1px solid #d5e2d9; color:var(--ink); background:#fffffff4; box-shadow:0 10px 28px rgba(11,40,23,.22); backdrop-filter:blur(14px); line-height:1.25; }
+.gps-calibration-panel { top:62px; right:14px; width:min(340px,calc(100% - 28px)); padding:12px; border-radius:15px; }
+.gps-calibration-panel>div:first-child,.tracking-heading>div { display:grid; gap:3px; }.gps-calibration-panel strong,.tracking-heading strong { font-size:12px; }.gps-calibration-panel span,.tracking-heading small,.gps-calibration-panel small { color:var(--muted); font-size:10px; }
+.gps-calibration-actions,.tracking-actions,.tracking-mode { display:flex; gap:6px; }.gps-calibration-actions button,.tracking-actions button,.tracking-mode button,.arrival-card button { min-height:34px; padding:0 9px; border:1px solid #bfd4c6; border-radius:9px; color:#175c3d; background:#fff; font-size:10px; font-weight:850; }.gps-calibration-actions button:disabled,.tracking-actions button:disabled { opacity:.42; }
+.gps-calibration-panel p,.tracking-message { margin:0; color:#6b561c; font-size:10px; }
+.live-tracking-panel { left:14px; bottom:14px; width:min(355px,calc(100% - 100px)); padding:11px; border-radius:16px; }.live-tracking-panel.active { border-color:#84b99a; }
+.tracking-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }.tracking-status { flex:0 0 auto; padding:4px 7px; border-radius:999px; color:#526057; background:#edf2ee; font-size:9px; font-weight:900; text-transform:capitalize; }.tracking-status.tracking { color:#fff; background:#176b45; }
+.tracking-mode button { flex:1; display:flex; align-items:center; justify-content:center; gap:5px; }.tracking-mode button span { font-size:15px; }.tracking-mode button.active { border-color:#176b45; color:#fff; background:#176b45; }
+.tracking-actions { flex-wrap:wrap; }.tracking-actions .tracking-primary { color:#fff; background:#176b45; }.tracking-actions .tracking-stop { color:#a12f2f; border-color:#e1baba; }
+.arrival-card { right:14px; bottom:14px; width:min(300px,calc(100% - 28px)); padding:12px; border-color:#efca64; border-radius:16px; background:#fffaf0f5; }.arrival-card strong { font-size:14px; }.arrival-card span { color:var(--muted); font-size:10px; }.arrival-card button { color:#fff; background:#176b45; }
+
+@media (max-width:720px) {
+  .gps-calibration-panel { position:fixed; z-index:46; top:calc(88px + env(safe-area-inset-top)); left:8px; right:8px; width:auto; max-height:145px; overflow:auto; }
+  .live-tracking-panel { position:fixed; z-index:36; left:10px; bottom:calc(80px + env(safe-area-inset-bottom)); width:min(250px,calc(100% - 82px)); padding:9px; }
+  .live-tracking-panel:not(.active) .tracking-mode,.live-tracking-panel:not(.active) .tracking-actions button:not(.tracking-primary),.live-tracking-panel:not(.active) .tracking-message:empty { display:none; }
+  .tracking-mode button { min-height:31px; padding:0 6px; }.tracking-actions button { min-height:32px; }
+  .arrival-card { position:fixed; z-index:39; right:10px; bottom:calc(80px + env(safe-area-inset-bottom)); width:min(275px,calc(100% - 20px)); }
+  .map-card.road-editing .gps-calibration-panel { display:grid; }
+}
