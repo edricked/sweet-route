@@ -180,7 +180,7 @@ button:disabled { cursor:not-allowed; opacity:.5; }
 
 @media (max-width:720px) {
   .road-editor-tools { position:fixed; z-index:47; top:calc(8px + env(safe-area-inset-top)); right:8px; }
-  .view-map .map-card.road-editing .map-action-stack { top:calc(52px + env(safe-area-inset-top)); right:8px; bottom:auto; }
+  .view-map .map-card.road-editing .map-action-stack { top:calc(8px + env(safe-area-inset-top)); right:auto; bottom:auto; left:8px; }
   .gps-calibration-panel { position:fixed; z-index:46; top:calc(52px + env(safe-area-inset-top)); left:8px; right:8px; width:auto; max-height:min(310px,52dvh); overflow:auto; }
   .manual-coordinate-entry { grid-template-columns:1fr 1fr; }.manual-coordinate-entry button { grid-column:1/-1; }
   .live-tracking-panel { position:fixed; z-index:36; left:10px; bottom:calc(80px + env(safe-area-inset-bottom)); width:min(250px,calc(100% - 82px)); padding:9px; }
