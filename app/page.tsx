@@ -299,6 +299,9 @@ export default function Home() {
 
   function deleteSelectedRoadPoint(){
     if(!selectedRoadPoint)return;
+    const point=roadNetwork.paths.find((path)=>path.id===selectedRoadPoint.pathId)?.points[selectedRoadPoint.index];
+    const hasAnchor=Boolean(point&&calibrationAnchors.some((anchor)=>anchor.roadPointId===point.id));
+    if(!window.confirm(`Delete this road point?${hasAnchor?" Its GPS anchor will also be removed.":""}`))return;
     commitRoadEdit((current)=>{
       const removed=current.paths.find((path)=>path.id===selectedRoadPoint.pathId)?.points[selectedRoadPoint.index];
       return {
@@ -759,6 +762,7 @@ export default function Home() {
             <div><strong>GPS calibration</strong><span>{gpsCalibration.count} anchor{gpsCalibration.count===1?"":"s"} · {gpsCalibration.recommended?"recommended coverage":gpsCalibration.ready?"basic calibration":"3 required"}</span><small>{selectedRoadPointValue?`Road point selected${selectedCalibrationAnchor?` · ${selectedCalibrationAnchor.source==="manual"?"manual":"device"} anchor saved`:""}.`:"Step 1: tap a blue road point on the map."}</small></div>
             <div className="gps-calibration-actions"><button disabled={capturingGps} onClick={()=>void setGpsAnchor()}>{capturingGps?"Reading GPS…":"Use current location"}</button><button disabled={!selectedCalibrationAnchor||capturingGps} onClick={removeGpsAnchor}>Remove</button><button disabled={!gpsCalibration.ready||capturingGps} onClick={()=>void testCurrentLocation()}>Test</button></div>
             <div className="manual-coordinate-entry"><span>Or enter decimal coordinates</span><input aria-label="Anchor latitude" inputMode="decimal" placeholder="Latitude" value={manualLatitude} onChange={(event)=>setManualLatitude(event.target.value)}/><input aria-label="Anchor longitude" inputMode="decimal" placeholder="Longitude" value={manualLongitude} onChange={(event)=>setManualLongitude(event.target.value)}/><button disabled={!manualLatitude.trim()||!manualLongitude.trim()} onClick={saveManualGpsAnchor}>{selectedCalibrationAnchor?"Update anchor":"Save anchor"}</button></div>
+            {selectedRoadPoint&&<div className="selected-road-actions"><span>Selected road point</span><button onClick={()=>setMovingRoadPoint(true)}>Move point</button><button className="danger" onClick={deleteSelectedRoadPoint}>Delete point</button></div>}
             {gpsMessage&&<p role="alert">{gpsMessage}</p>}
           </div>}
           <div className={`delivery-hud ${trackingActive?"active":""}`}>
