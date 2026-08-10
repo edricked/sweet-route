@@ -174,3 +174,52 @@ button:disabled { cursor:not-allowed; opacity:.5; }
   .arrival-card { position:fixed; z-index:39; right:10px; bottom:calc(80px + env(safe-area-inset-bottom)); width:min(275px,calc(100% - 20px)); }
   .map-card.road-editing .gps-calibration-panel { display:grid; }
 }
+
+/* Mobile delivery HUD: keep route information readable without overlapping controls. */
+.arrival-card>div { min-width:0; display:grid; gap:3px; line-height:1.3; }
+.arrival-card>div>span,.arrival-card>div>small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+@media (max-width:720px) {
+  .live-tracking-panel.active {
+    left:10px;
+    right:10px;
+    bottom:calc(82px + env(safe-area-inset-bottom));
+    width:auto;
+    padding:12px;
+    gap:10px;
+    border-radius:18px;
+    background:#fffffff8;
+  }
+  .live-tracking-panel.active .tracking-heading strong { font-size:14px; }
+  .live-tracking-panel.active .tracking-heading small { margin-top:2px; font-size:11px; }
+  .live-tracking-panel.active .tracking-status { padding:5px 9px; font-size:10px; }
+  .live-tracking-panel.active .tracking-mode { display:grid; grid-template-columns:1fr 1fr; }
+  .live-tracking-panel.active .tracking-mode button { min-height:40px; border-radius:11px; font-size:11px; }
+  .live-tracking-panel.active .tracking-actions { display:grid; grid-template-columns:auto 1fr 1fr; }
+  .live-tracking-panel.active .tracking-actions button { min-width:0; min-height:38px; padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .live-tracking-panel.active .tracking-message { padding:7px 9px; border-radius:9px; color:#785c18; background:#fff7dc; line-height:1.35; }
+
+  .arrival-card {
+    left:10px;
+    right:10px;
+    bottom:calc(292px + env(safe-area-inset-bottom));
+    width:auto;
+    padding:11px 13px;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;
+    gap:10px;
+    border-radius:15px;
+    background:#fffaf0fa;
+  }
+  .arrival-card strong { font-size:13px; }
+  .arrival-card>div>span { font-size:11px; }
+  .arrival-card>div>small { color:#725f35; font-size:10px; }
+  .arrival-card button { min-height:35px; white-space:nowrap; }
+
+  .view-map:has(.live-tracking-panel.active) .map-action-stack {
+    top:170px;
+    right:10px;
+    bottom:auto;
+  }
+  .view-map:has(.live-tracking-panel.active) .map-add-button { display:none; }
+}
