@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Address, AppData, AppTab, DeliveryStatus, Order, OrderLine, Product, STATUS_LABEL as statusLabel, VALID_BLOCKS, addressLabel, makeId } from "./domain";
 import { RoadMask, createRoadMask, roadPath, routeDistance as roadOrStraightDistance, validateRoadGeometry } from "./routing";
 import { useLocalAppData } from "./use-local-app-data";
@@ -658,21 +659,19 @@ export default function Home() {
 
   function changeMapZoom(delta:number) {
     const viewport=mapViewportRef.current,surface=mapRef.current;
+    const nextZoom=Math.min(MAX_MAP_ZOOM,Math.max(minimumZoom,zoom+delta));
+    if(nextZoom===zoom)return;
     const focusX=viewport&&surface&&surface.offsetWidth
       ?(viewport.scrollLeft+viewport.clientWidth/2)/surface.offsetWidth
       :.5;
     const focusY=viewport&&surface&&surface.offsetHeight
       ?(viewport.scrollTop+viewport.clientHeight/2)/surface.offsetHeight
       :.5;
-    setZoom((current)=>Math.min(MAX_MAP_ZOOM,Math.max(minimumZoom,current+delta)));
-    window.requestAnimationFrame(()=>window.requestAnimationFrame(()=>{
-      const nextViewport=mapViewportRef.current,nextSurface=mapRef.current;
-      if(!nextViewport||!nextSurface)return;
-      nextViewport.scrollTo({
-        left:Math.max(0,focusX*nextSurface.offsetWidth-nextViewport.clientWidth/2),
-        top:Math.max(0,focusY*nextSurface.offsetHeight-nextViewport.clientHeight/2),
-      });
-    }));
+    flushSync(()=>setZoom(nextZoom));
+    const nextViewport=mapViewportRef.current,nextSurface=mapRef.current;
+    if(!nextViewport||!nextSurface)return;
+    nextViewport.scrollLeft=Math.max(0,focusX*nextSurface.offsetWidth-nextViewport.clientWidth/2);
+    nextViewport.scrollTop=Math.max(0,focusY*nextSurface.offsetHeight-nextViewport.clientHeight/2);
   }
 
   function resetMapView() {
