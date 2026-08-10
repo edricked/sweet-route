@@ -70,6 +70,8 @@ export default function Home() {
   const [trackingMode,setTrackingMode]=useState<TrackingMode>("walking");
   const [capturingGps,setCapturingGps]=useState(false);
   const [gpsMessage,setGpsMessage]=useState("");
+  const [capturingOwnerGps,setCapturingOwnerGps]=useState(false);
+  const [ownerGpsMessage,setOwnerGpsMessage]=useState("");
   const [testGpsReading,setTestGpsReading]=useState<GeoReading|null>(null);
   const {status:trackingStatus,reading:liveGpsReading,error:trackingError,start:startGeolocation,stop:stopGeolocation}=useLiveGeolocation();
 
@@ -523,6 +525,14 @@ export default function Home() {
   function removeAddressGps(addressId:string){
     setData((current)=>({...current,addresses:current.addresses.map((address)=>{if(address.id!==addressId)return address;const {gps:_,...rest}=address;void _;return rest;})}));
   }
+
+  async function captureOwnerGps(){
+    if(!owner||capturingOwnerGps)return;
+    setCapturingOwnerGps(true);setOwnerGpsMessage("Reading precise location…");
+    try{await captureAddressGps(owner.id);setOwnerGpsMessage("Home GPS coordinate saved.");}
+    catch(error){const message=error instanceof Error?error.message:"Unable to capture home GPS.";setOwnerGpsMessage(message);window.alert(message);}
+    finally{setCapturingOwnerGps(false);}
+  }
   function deleteAddress(addressId:string){
     const orderCount=data.orders.filter((order)=>order.addressId===addressId).length;
     if(!window.confirm(orderCount?`Delete this address and its ${orderCount} order(s)? This cannot be undone.`:"Delete this address? This cannot be undone."))return;
@@ -755,7 +765,7 @@ export default function Home() {
         {activeTab === "addresses" && <section className="settings-overlay address-book">
           <div className="address-book-title"><div><p className="eyebrow">Reusable locations</p><h2>Addresses</h2></div><button className="primary-button" onClick={()=>beginAddressRegistration()}>+ Register on map</button></div>
           <AddressSearch phase={addressSearchPhase} block={addressSearchBlock} lot={addressSearchLot} resultCount={addressMatches.length} active={addressSearchActive} onPhase={(next)=>{setAddressSearchPhase(next);setAddressSearchBlock(VALID_BLOCKS[next][0]);}} onBlock={setAddressSearchBlock} onLot={setAddressSearchLot} onClear={()=>setAddressSearchLot("")} onAdd={()=>beginAddressRegistration({phase:addressSearchPhase,block:addressSearchBlock,lot:searchedLot})}/>
-          {owner&&<button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}</small></div><b>›</b></button>}
+          {owner&&<div className="owner-home-card"><button className="owner-row" onClick={beginOwnerSetup}><span>⌂</span><div><strong>Owner home</strong><small>{addressLabel(owner)}{owner.gps?` · GPS ±${Math.round(owner.gps.accuracy)} m`:" · GPS not set"}</small></div><b>›</b></button><div className="owner-gps-actions"><button disabled={capturingOwnerGps} onClick={()=>void captureOwnerGps()}>{capturingOwnerGps?"Reading…":owner.gps?"Replace GPS":"Capture GPS"}</button>{owner.gps&&<button className="danger" onClick={()=>{if(window.confirm("Remove the home GPS coordinate?")){removeAddressGps(owner.id);setOwnerGpsMessage("Home GPS coordinate removed.");}}}>Remove</button>}</div>{ownerGpsMessage&&<p role="status">{ownerGpsMessage}</p>}</div>}
           {addressMatches.map((address)=><div className="address-book-row" key={address.id}><button className="address-main" onClick={()=>{setSelectedAddressId(address.id);setSelectedOrderId(null);setActiveTab("map");}}><span>⌖</span><div><strong>{addressLabel(address)}</strong><small>{data.orders.filter((order)=>order.addressId===address.id).length} order(s)</small></div></button><button className="address-add" onClick={()=>beginOrderForAddress(address)}>+ Order</button></div>)}
           {!addressMatches.length&&!addressSearchActive&&<div className="empty-list">No customer addresses yet. Import a backup or register a new one on the map.</div>}
         </section>}
