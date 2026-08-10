@@ -67,7 +67,7 @@ export default function Home() {
   const [selectedRoadPoint,setSelectedRoadPoint]=useState<{pathId:string;index:number}|null>(null);
   const [movingRoadPoint,setMovingRoadPoint]=useState(false);
   const [roadUndoCount,setRoadUndoCount]=useState(0);
-  const [trackingMode,setTrackingMode]=useState<TrackingMode>("vehicle");
+  const [trackingMode,setTrackingMode]=useState<TrackingMode>("walking");
   const [capturingGps,setCapturingGps]=useState(false);
   const [gpsMessage,setGpsMessage]=useState("");
   const [testGpsReading,setTestGpsReading]=useState<GeoReading|null>(null);
