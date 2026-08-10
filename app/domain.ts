@@ -1,11 +1,13 @@
 export type DeliveryStatus = "preparing" | "ready" | "out-for-delivery" | "delivered" | "cancelled";
 export type AppTab = "today" | "map" | "orders" | "products" | "addresses" | "settings";
 export type Point = { x: number; y: number };
+export type AddressGps = { latitude:number; longitude:number; accuracy:number; capturedAt:string };
 
 export type Address = {
   id: string; phase: 1 | 2; block: number; lot: number;
   x: number; y: number; isOwner: boolean; createdAt: string;
   customerName?: string; phone?: string;
+  gps?: AddressGps;
 };
 
 export type Order = {
