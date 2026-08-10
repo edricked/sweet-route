@@ -660,18 +660,19 @@ export default function Home() {
   function changeMapZoom(delta:number) {
     const viewport=mapViewportRef.current,surface=mapRef.current;
     const nextZoom=Math.min(MAX_MAP_ZOOM,Math.max(minimumZoom,zoom+delta));
-    if(nextZoom===zoom)return;
-    const focusX=viewport&&surface&&surface.offsetWidth
-      ?(viewport.scrollLeft+viewport.clientWidth/2)/surface.offsetWidth
-      :.5;
-    const focusY=viewport&&surface&&surface.offsetHeight
-      ?(viewport.scrollTop+viewport.clientHeight/2)/surface.offsetHeight
-      :.5;
+    if(nextZoom===zoom||!viewport||!surface)return;
+    const viewportRect=viewport.getBoundingClientRect();
+    const surfaceRect=surface.getBoundingClientRect();
+    const focusClientX=viewportRect.left+viewportRect.width/2;
+    const focusClientY=viewportRect.top+viewportRect.height/2;
+    const focusX=(focusClientX-surfaceRect.left)/surfaceRect.width;
+    const focusY=(focusClientY-surfaceRect.top)/surfaceRect.height;
     flushSync(()=>setZoom(nextZoom));
-    const nextViewport=mapViewportRef.current,nextSurface=mapRef.current;
-    if(!nextViewport||!nextSurface)return;
-    nextViewport.scrollLeft=Math.max(0,focusX*nextSurface.offsetWidth-nextViewport.clientWidth/2);
-    nextViewport.scrollTop=Math.max(0,focusY*nextSurface.offsetHeight-nextViewport.clientHeight/2);
+    const nextSurfaceRect=surface.getBoundingClientRect();
+    const nextFocusClientX=nextSurfaceRect.left+focusX*nextSurfaceRect.width;
+    const nextFocusClientY=nextSurfaceRect.top+focusY*nextSurfaceRect.height;
+    viewport.scrollLeft+=nextFocusClientX-focusClientX;
+    viewport.scrollTop+=nextFocusClientY-focusClientY;
   }
 
   function resetMapView() {
