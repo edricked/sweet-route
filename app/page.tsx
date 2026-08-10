@@ -759,12 +759,12 @@ export default function Home() {
 }
 
 function LiveLocationOverlay({point,accuracyRadius,heading,mode,weak,testing}:{point:{x:number;y:number};accuracyRadius:number;heading:number;mode:TrackingMode;weak:boolean;testing:boolean}){
-  return <svg className={`live-location-layer ${weak?"weak":""} ${testing?"testing":""}`} viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-label={testing?"GPS test position":`Live ${mode} position`}>
-    <circle className="gps-accuracy" cx={point.x*2100} cy={point.y*1600} r={accuracyRadius}/>
-    <g className={`live-marker ${mode}`} transform={`translate(${point.x*2100} ${point.y*1600}) rotate(${Number.isFinite(heading)?heading:0})`}>
-      {mode==="vehicle"?<><path className="marker-shadow" d="M-17-23Q0-31 17-23L22 18Q0 29-22 18Z"/><path className="marker-body" d="M-14-21Q0-27 14-21L18 17Q0 24-18 17Z"/><path className="marker-glass" d="M-10-11Q0-16 10-11L12 2H-12Z"/><circle cx="-12" cy="15" r="3"/><circle cx="12" cy="15" r="3"/><path className="marker-direction" d="M0-34 7-24H-7Z"/></>:<><circle className="walker-head" cy="-18" r="7"/><path className="walker-body" d="M0-9 0 7M0-3-11 5M0-2 10 3M0 7-9 21M0 7 11 20"/><path className="marker-direction" d="M0-34 7-24H-7Z"/></>}
-    </g>
-  </svg>;
+  return <>
+    <svg className="live-location-layer" viewBox="0 0 2100 1600" width="2100" height="1600" preserveAspectRatio="xMinYMin meet" aria-hidden="true"><circle className="gps-accuracy" cx={point.x*2100} cy={point.y*1600} r={accuracyRadius}/></svg>
+    <span className={`live-position-pin ${mode} ${weak?"weak":""} ${testing?"testing":""}`} style={{left:`${point.x*100}%`,top:`${point.y*100}%`}} aria-label={testing?"GPS test position":`Live ${mode} position`} title={`${mode} position${Number.isFinite(heading)?` · heading ${Math.round(heading)}°`:""}`}>
+      <svg viewBox="0 0 24 24" aria-hidden="true">{mode==="vehicle"?<><rect x="7" y="4" width="10" height="16" rx="4"/><path d="M9 8h6M9 16h6"/><circle cx="8" cy="9" r="1"/><circle cx="16" cy="9" r="1"/><circle cx="8" cy="16" r="1"/><circle cx="16" cy="16" r="1"/></>:<><circle cx="12" cy="6" r="2.4"/><path d="M12 9v5m0-3-4 3m4-3 4 2m-4 1-3 5m3-5 4 5"/></>}</svg>
+    </span>
+  </>;
 }
 
 function BackupRow({title,count,onExport,onImport}:{title:string;count:number;onExport:()=>void;onImport:()=>void}){return <div className="backup-row"><div><strong>{title}</strong><small>{count} record{count===1?"":"s"}</small></div><div><button disabled={!count} onClick={onExport}>Export</button><button onClick={onImport}>Restore</button></div></div>;}
