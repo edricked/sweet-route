@@ -114,7 +114,9 @@ export function snapToRoad(point:Point,network:RoadNetwork,previous?:Pick<Snappe
     const ratio=lengthSquared?Math.max(0,Math.min(1,(px*dx+py*dy)/lengthSquared)):0;
     const projected={x:from.x+(to.x-from.x)*ratio,y:from.y+(to.y-from.y)*ratio};
     const distancePixels=Math.hypot((point.x-projected.x)*MAP_WIDTH,(point.y-projected.y)*MAP_HEIGHT);
-    const continuityPenalty=previous&&previous.pathId!==path.id?10:0,score=distancePixels+continuityPenalty;
+    const pathPenalty=previous&&previous.pathId!==path.id?18:0;
+    const segmentPenalty=previous&&previous.pathId===path.id?Math.min(24,Math.abs(previous.segmentIndex-segmentIndex)*2.5):0;
+    const score=distancePixels+pathPenalty+segmentPenalty;
     if(score<bestScore){bestScore=score;best={...projected,pathId:path.id,segmentIndex,distancePixels};}
   }
   return best&&best.distancePixels<=100?best:null;
