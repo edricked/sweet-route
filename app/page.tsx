@@ -70,6 +70,8 @@ export default function Home() {
   const [trackingMode,setTrackingMode]=useState<TrackingMode>("walking");
   const [capturingGps,setCapturingGps]=useState(false);
   const [gpsMessage,setGpsMessage]=useState("");
+  const [manualLatitude,setManualLatitude]=useState("");
+  const [manualLongitude,setManualLongitude]=useState("");
   const [capturingOwnerGps,setCapturingOwnerGps]=useState(false);
   const [ownerGpsMessage,setOwnerGpsMessage]=useState("");
   const [testGpsReading,setTestGpsReading]=useState<GeoReading|null>(null);
@@ -384,7 +386,7 @@ export default function Home() {
     setCapturingGps(true);setGpsMessage("Collecting precise GPS readings…");
     try{
       const reading=await captureAccuratePosition();
-      const anchor={id:selectedCalibrationAnchor?.id??makeId("gps-anchor"),roadPointId:selectedRoadPointValue.id,x:selectedRoadPointValue.x,y:selectedRoadPointValue.y,latitude:reading.latitude,longitude:reading.longitude,accuracy:reading.accuracy,capturedAt:new Date(reading.timestamp).toISOString()};
+      const anchor={id:selectedCalibrationAnchor?.id??makeId("gps-anchor"),roadPointId:selectedRoadPointValue.id,x:selectedRoadPointValue.x,y:selectedRoadPointValue.y,latitude:reading.latitude,longitude:reading.longitude,accuracy:reading.accuracy,capturedAt:new Date(reading.timestamp).toISOString(),source:"device" as const};
       commitRoadEdit((current)=>({...current,calibrationAnchors:[...(current.calibrationAnchors??[]).filter((item)=>item.roadPointId!==anchor.roadPointId),anchor]}));
       setGpsMessage(`GPS anchor saved at ±${Math.round(reading.accuracy)} m.`);
     }catch(error){
@@ -393,6 +395,15 @@ export default function Home() {
       window.alert(message);
     }
     finally{setCapturingGps(false);}
+  }
+
+  function saveManualGpsAnchor(){
+    if(!selectedRoadPointValue){const message="Tap a blue road point first, then enter its coordinates.";setGpsMessage(message);window.alert(message);return;}
+    const latitude=Number(manualLatitude.trim()),longitude=Number(manualLongitude.trim());
+    if(!Number.isFinite(latitude)||latitude< -90||latitude>90||!Number.isFinite(longitude)||longitude< -180||longitude>180){const message="Enter valid decimal coordinates: latitude from -90 to 90 and longitude from -180 to 180.";setGpsMessage(message);window.alert(message);return;}
+    const anchor={id:selectedCalibrationAnchor?.id??makeId("gps-anchor"),roadPointId:selectedRoadPointValue.id,x:selectedRoadPointValue.x,y:selectedRoadPointValue.y,latitude,longitude,accuracy:8,capturedAt:new Date().toISOString(),source:"manual" as const};
+    commitRoadEdit((current)=>({...current,calibrationAnchors:[...(current.calibrationAnchors??[]).filter((item)=>item.roadPointId!==anchor.roadPointId),anchor]}));
+    setGpsMessage("Manual anchor saved. Add at least 3 distributed anchors, then test your location.");setManualLatitude("");setManualLongitude("");
   }
 
   function removeGpsAnchor(){
@@ -744,7 +755,12 @@ export default function Home() {
               {!editingRoads&&pendingPoint && <div className="pending-pin" style={{ left: `${pendingPoint.x * 100}%`, top: `${pendingPoint.y * 100}%` }}>+</div>}
             </div>
           </div>
-          {editingRoads&&<div className="gps-calibration-panel"><div><strong>GPS calibration</strong><span>{gpsCalibration.count} anchor{gpsCalibration.count===1?"":"s"} · {gpsCalibration.recommended?"recommended coverage":gpsCalibration.ready?"basic calibration":"3 required"}</span><small>{selectedRoadPointValue?"Road point selected — now capture GPS here.":"Step 1: tap a blue road point on the map."}</small></div><div className="gps-calibration-actions"><button disabled={capturingGps} onClick={()=>void setGpsAnchor()}>{capturingGps?"Reading GPS…":selectedCalibrationAnchor?"Replace GPS anchor":"Set GPS anchor"}</button><button disabled={!selectedCalibrationAnchor||capturingGps} onClick={removeGpsAnchor}>Remove anchor</button><button disabled={!gpsCalibration.ready||capturingGps} onClick={()=>void testCurrentLocation()}>Test my location</button></div>{gpsMessage&&<p role="alert">{gpsMessage}</p>}</div>}
+          {editingRoads&&<div className="gps-calibration-panel">
+            <div><strong>GPS calibration</strong><span>{gpsCalibration.count} anchor{gpsCalibration.count===1?"":"s"} · {gpsCalibration.recommended?"recommended coverage":gpsCalibration.ready?"basic calibration":"3 required"}</span><small>{selectedRoadPointValue?`Road point selected${selectedCalibrationAnchor?` · ${selectedCalibrationAnchor.source==="manual"?"manual":"device"} anchor saved`:""}.`:"Step 1: tap a blue road point on the map."}</small></div>
+            <div className="gps-calibration-actions"><button disabled={capturingGps} onClick={()=>void setGpsAnchor()}>{capturingGps?"Reading GPS…":"Use current location"}</button><button disabled={!selectedCalibrationAnchor||capturingGps} onClick={removeGpsAnchor}>Remove</button><button disabled={!gpsCalibration.ready||capturingGps} onClick={()=>void testCurrentLocation()}>Test</button></div>
+            <div className="manual-coordinate-entry"><span>Or enter decimal coordinates</span><input aria-label="Anchor latitude" inputMode="decimal" placeholder="Latitude" value={manualLatitude} onChange={(event)=>setManualLatitude(event.target.value)}/><input aria-label="Anchor longitude" inputMode="decimal" placeholder="Longitude" value={manualLongitude} onChange={(event)=>setManualLongitude(event.target.value)}/><button disabled={!manualLatitude.trim()||!manualLongitude.trim()} onClick={saveManualGpsAnchor}>{selectedCalibrationAnchor?"Update anchor":"Save anchor"}</button></div>
+            {gpsMessage&&<p role="alert">{gpsMessage}</p>}
+          </div>}
           <div className={`delivery-hud ${trackingActive?"active":""}`}>
           {!editingRoads&&<div className={`live-tracking-panel ${trackingActive?"active":""}`}><div className="tracking-heading"><div><strong>{trackingActive?"Live delivery tracking":"Live location"}</strong><small>{trackingActive&&remainingRouteMeters!==null?`${Math.max(0,Math.round(remainingRouteMeters))} m to ${activeDestination?addressLabel(activeDestination):"next stop"}`:gpsCalibration.ready?"Calibration ready":"Calibrate 3+ road points first"}</small></div><span className={`tracking-status ${trackingStatus}`}>{trackingActive?`${Math.round(liveGpsReading?.accuracy??0)} m`:trackingStatus}</span></div><div className="tracking-mode" aria-label="Travel mode"><button className={trackingMode==="vehicle"?"active":""} onClick={()=>setTrackingMode("vehicle")}><span>🚗</span>Vehicle</button><button className={trackingMode==="walking"?"active":""} onClick={()=>setTrackingMode("walking")}><span>🚶</span>Walking</button></div><div className="tracking-actions">{trackingStatus==="idle"||trackingStatus==="error"?<button className="tracking-primary" disabled={!gpsCalibration.ready||!roadDraftValid} onClick={()=>void startLiveTracking()}>Start tracking</button>:<button className="tracking-stop" onClick={stopLiveTracking}>Stop</button>}<button disabled={!displayedGpsPoint} onClick={recenterGps}>Center on me</button>{gpsCalibration.ready&&trackingStatus==="idle"&&<button disabled={capturingGps} onClick={()=>void testCurrentLocation()}>Test GPS</button>}</div>{(trackingError||gpsMessage||gpsOutsideMap)&&<p className="tracking-message">{gpsOutsideMap?"GPS position is outside the calibrated map.":trackingError||gpsMessage}</p>}</div>}
           {!editingRoads&&trackingActive&&arrivalState&&activeDestination&&<div className={`arrival-card ${arrivalState}`}><div><strong>{arrivalState==="arrived"?"You’ve arrived":"Approaching delivery"}</strong><span>{addressLabel(activeDestination)}</span>{activeDestinationOrder&&<small>{activeDestinationOrder.customerName} · {activeDestinationOrder.items}</small>}</div>{arrivalState==="arrived"&&activeDestinationOrder&&<button onClick={()=>{setSelectedOrderId(activeDestinationOrder.id);setSelectedAddressId(activeDestination.id);}}>Open order</button>}</div>}

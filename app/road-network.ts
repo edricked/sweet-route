@@ -10,6 +10,7 @@ export type CalibrationAnchor = {
   longitude: number;
   accuracy: number;
   capturedAt: string;
+  source?: "device" | "manual";
 };
 export type RoadPath = { id: string; points: RoadPoint[] };
 export type RoadNetwork = { version: 1; paths: RoadPath[]; active?: boolean; approvedWalkways?: string[]; calibrationAnchors?: CalibrationAnchor[] };
