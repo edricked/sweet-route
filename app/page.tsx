@@ -412,6 +412,15 @@ export default function Home() {
     setGpsMessage("Manual anchor saved. Add at least 3 distributed anchors, then test your location.");setManualLatitude("");setManualLongitude("");
   }
 
+  function applyPastedCoordinatePair(value:string){
+    const match=value.trim().match(/^\(?\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*[,，]\s*([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*\)?$/);
+    if(!match)return false;
+    const latitude=Number(match[1]),longitude=Number(match[2]);
+    if(!Number.isFinite(latitude)||latitude< -90||latitude>90||!Number.isFinite(longitude)||longitude< -180||longitude>180)return false;
+    setManualLatitude(match[1]);setManualLongitude(match[2]);setGpsMessage("Google Maps coordinates extracted. Review them, then save the anchor.");
+    return true;
+  }
+
   function removeGpsAnchor(){
     if(!selectedCalibrationAnchor||!window.confirm("Remove this GPS calibration anchor?"))return;
     commitRoadEdit((current)=>({...current,calibrationAnchors:(current.calibrationAnchors??[]).filter((anchor)=>anchor.id!==selectedCalibrationAnchor.id)}));setGpsMessage("GPS anchor removed.");
@@ -783,7 +792,7 @@ export default function Home() {
           {editingRoads&&showGpsCalibration&&<div className="gps-calibration-panel">
             <div className="gps-calibration-heading"><div><strong>GPS calibration</strong><span>{gpsCalibration.count} anchor{gpsCalibration.count===1?"":"s"} · {gpsCalibration.recommended?"recommended coverage":gpsCalibration.ready?"basic calibration":"3 required"}</span><small>{selectedRoadPointValue?`Road point selected${selectedCalibrationAnchor?` · ${selectedCalibrationAnchor.source==="manual"?"manual":"device"} anchor saved`:""}.`:"Tap a blue road point, then save its real coordinates."}</small></div><button onClick={()=>setShowGpsCalibration(false)} aria-label="Close GPS calibration">×</button></div>
             <div className="gps-calibration-actions"><button disabled={capturingGps} onClick={()=>void setGpsAnchor()}>{capturingGps?"Reading GPS…":"Use current location"}</button><button disabled={!selectedCalibrationAnchor||capturingGps} onClick={removeGpsAnchor}>Remove</button><button disabled={!gpsCalibration.ready||capturingGps} onClick={()=>void testCurrentLocation()}>Test</button></div>
-            <div className="manual-coordinate-entry"><span>Or enter decimal coordinates</span><input aria-label="Anchor latitude" inputMode="decimal" placeholder="Latitude" value={manualLatitude} onChange={(event)=>setManualLatitude(event.target.value)}/><input aria-label="Anchor longitude" inputMode="decimal" placeholder="Longitude" value={manualLongitude} onChange={(event)=>setManualLongitude(event.target.value)}/><button disabled={!manualLatitude.trim()||!manualLongitude.trim()} onClick={saveManualGpsAnchor}>{selectedCalibrationAnchor?"Update anchor":"Save anchor"}</button></div>
+            <div className="manual-coordinate-entry"><span>Paste Google Maps (latitude, longitude), or enter separately</span><input aria-label="Anchor latitude or Google Maps coordinate pair" inputMode="decimal" placeholder="Latitude or paste pair" value={manualLatitude} onPaste={(event)=>{const value=event.clipboardData.getData("text");if(applyPastedCoordinatePair(value))event.preventDefault();}} onChange={(event)=>{if(!applyPastedCoordinatePair(event.target.value))setManualLatitude(event.target.value);}}/><input aria-label="Anchor longitude" inputMode="decimal" placeholder="Longitude" value={manualLongitude} onChange={(event)=>setManualLongitude(event.target.value)}/><button disabled={!manualLatitude.trim()||!manualLongitude.trim()} onClick={saveManualGpsAnchor}>{selectedCalibrationAnchor?"Update anchor":"Save anchor"}</button></div>
             {gpsMessage&&<p role="alert">{gpsMessage}</p>}
           </div>}
           <div className={`delivery-hud ${trackingActive?"active":""}`}>
