@@ -26,6 +26,7 @@ export default function Home() {
   const roadImportRef = useRef<HTMLInputElement>(null);
   const roadUndoStackRef = useRef<RoadNetwork[]>([]);
   const previousSnappedPositionRef=useRef<SnappedRoadPosition|null>(null);
+  const lastFollowPointRef=useRef<{x:number;y:number}|null>(null);
   const [data, setData, isHydrated] = useLocalAppData();
   const [roadNetwork,setRoadNetwork]=useRoadNetwork();
   const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
@@ -71,6 +72,7 @@ export default function Home() {
   const [showRoadEditorLegend,setShowRoadEditorLegend]=useState(false);
   const [showGpsCalibration,setShowGpsCalibration]=useState(false);
   const [showAnchorValidation,setShowAnchorValidation]=useState(false);
+  const [followLocation,setFollowLocation]=useState(false);
   const [trackingMode,setTrackingMode]=useState<TrackingMode>("walking");
   const [capturingGps,setCapturingGps]=useState(false);
   const [gpsMessage,setGpsMessage]=useState("");
@@ -157,6 +159,15 @@ export default function Home() {
   const ownerGpsPoint=owner?.gps&&gpsCalibration.ready?gpsToImage({latitude:owner.gps.latitude,longitude:owner.gps.longitude,accuracy:owner.gps.accuracy,heading:null,speed:null,timestamp:new Date(owner.gps.capturedAt).getTime()},calibrationAnchors):null;
   const ownerGpsDifference=owner&&ownerGpsPoint&&metersPerPixel?Math.hypot((owner.x-ownerGpsPoint.x)*2100,(owner.y-ownerGpsPoint.y)*1600)*metersPerPixel:null;
   const ownerGpsNeedsReview=Boolean(owner?.gps&&ownerGpsDifference!==null&&ownerGpsDifference>Math.max(8,owner.gps.accuracy,gpsCalibration.averageAccuracy));
+  useEffect(()=>{
+    if(!trackingActive||!followLocation||!displayedGpsPoint){lastFollowPointRef.current=null;return;}
+    const previous=lastFollowPointRef.current;
+    const movedPixels=previous?Math.hypot((displayedGpsPoint.x-previous.x)*2100,(displayedGpsPoint.y-previous.y)*1600):Infinity;
+    if(previous&&movedPixels*(metersPerPixel??.5)<4)return;
+    lastFollowPointRef.current=displayedGpsPoint;
+    const frame=window.requestAnimationFrame(()=>centerMapOnPoint(displayedGpsPoint,"smooth"));
+    return()=>window.cancelAnimationFrame(frame);
+  },[trackingActive,followLocation,displayedGpsPoint?.x,displayedGpsPoint?.y,metersPerPixel]);
   const routingNetwork=trackingActive?trackingNetwork:roadNetwork,routingGraphReady=trackingActive||graphReady;
   const deliveryDistance=(from:{x:number;y:number},to:{x:number;y:number})=>routingGraphReady?roadNetworkDistance(from,to,routingNetwork):roadOrStraightDistance(from,to,roadMask);
   const suggestedRoute = useMemo(() => {
@@ -447,7 +458,7 @@ export default function Home() {
     setTestGpsReading(null);setPendingRouteStartOrderId(null);setRouteVisible(true);setGpsMessage("");await startGeolocation();
   }
 
-  function stopLiveTracking(){stopGeolocation();setTestGpsReading(null);previousSnappedPositionRef.current=null;setGpsMessage("Live tracking stopped. Routes start from home again.");}
+  function stopLiveTracking(){stopGeolocation();setTestGpsReading(null);setFollowLocation(false);lastFollowPointRef.current=null;previousSnappedPositionRef.current=null;setGpsMessage("Live tracking stopped. Routes start from home again.");}
 
   function finishRoadEditing(){setEditingRoads(false);setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);setShowRoadEditorLegend(false);setShowGpsCalibration(false);setShowAnchorValidation(false);roadUndoStackRef.current=[];setRoadUndoCount(0);setShowLayers(false);}
 
@@ -668,17 +679,21 @@ export default function Home() {
   }
 
   function recenterGps(){
-    if(!displayedGpsPoint||!mapViewportRef.current||!mapRef.current)return;
+    if(!displayedGpsPoint)return;
+    centerMapOnPoint(displayedGpsPoint,"auto");
+  }
+
+  function centerMapOnPoint(point:{x:number;y:number},behavior:ScrollBehavior){
+    if(!mapViewportRef.current||!mapRef.current)return;
     const viewport=mapViewportRef.current,surface=mapRef.current;
-    const centerOnGps=()=>{
+    const centerPoint=()=>{
       const viewportRect=viewport.getBoundingClientRect(),surfaceRect=surface.getBoundingClientRect();
-      const markerX=surfaceRect.left+displayedGpsPoint.x*surfaceRect.width;
-      const markerY=surfaceRect.top+displayedGpsPoint.y*surfaceRect.height;
-      viewport.scrollLeft+=markerX-(viewportRect.left+viewportRect.width/2);
-      viewport.scrollTop+=markerY-(viewportRect.top+viewportRect.height/2);
+      const markerX=surfaceRect.left+point.x*surfaceRect.width;
+      const markerY=surfaceRect.top+point.y*surfaceRect.height;
+      viewport.scrollBy({left:markerX-(viewportRect.left+viewportRect.width/2),top:markerY-(viewportRect.top+viewportRect.height/2),behavior});
     };
-    centerOnGps();
-    window.requestAnimationFrame(centerOnGps);
+    centerPoint();
+    if(behavior==="auto")window.requestAnimationFrame(centerPoint);
   }
 
   function changeMapZoom(delta:number) {
@@ -779,7 +794,7 @@ export default function Home() {
           {showLayers && <div className="layers-popover"><strong>Map layers</strong><label><input type="checkbox" checked={routeVisible} onChange={(event) => setRouteVisible(event.target.checked)} /> Delivery route</label><label><input type="checkbox" checked={showAllAddresses} onChange={(event) => setShowAllAddresses(event.target.checked)} /> All saved addresses</label><button className="road-edit-toggle" onClick={()=>{setRoadNetwork((current)=>({...current,active:false}));setEditingRoads(true);setShowLayers(false);setShowRoadValidation(false);setPendingPoint(null);setSelectedAddressId(null);setSelectedOrderId(null);}}>Edit road draft</button><button className="road-validate-toggle" disabled={!roadNetwork.paths.length} onClick={()=>setShowRoadValidation(true)}>Validate road network</button>{showRoadValidation&&<div className={`road-validation ${roadDraftValid?"valid":"invalid"}`}><strong>{roadDraftValid?"Road network is valid":"Draft needs attention"}</strong><span>{roadValidation.usablePaths} connected segment group{roadValidation.usablePaths===1?"":"s"} · {roadValidation.components} connected section{roadValidation.components===1?"":"s"}</span><span>{Math.round(roadGeometry.coverage*100)}% follows detected roads · {approvedWalkwayKeys.size} approved walkway{approvedWalkwayKeys.size===1?"":"s"}.</span>{roadGeometry.offRoadSegments>0&&<span>{roadGeometry.offRoadSegments} unapproved segment{roadGeometry.offRoadSegments===1?" needs":"s need"} correction or walkway approval.</span>}{roadValidation.incompletePaths>0&&<span>{roadValidation.incompletePaths} unfinished extension{roadValidation.incompletePaths===1?"":"s"}</span>}{!owner&&<span>Set an owner home first.</span>}{roadValidation.unreachablePoints>0&&<span>{roadValidation.unreachablePoints} address{roadValidation.unreachablePoints===1?" is":"es are"} unreachable from home.</span>}</div>}<label className="road-routing-toggle"><input type="checkbox" role="switch" checked={roadNetwork.active===true} disabled={!roadNetwork.paths.length} onChange={(event)=>{if(!event.target.checked){setRoadNetwork((current)=>({...current,active:false}));return;}setShowRoadValidation(true);if(roadDraftValid)setRoadNetwork((current)=>({...current,active:true}));}}/><span className="road-switch" aria-hidden="true"/><span><strong>Use road draft</strong><small>{roadNetwork.active?"On — traced-road routing":"Off — default image routing"}</small></span></label><small>{roadNetwork.active?"Traced-road routing is active":`Image routing is active${roadNetwork.paths.length?` · road draft saved`:""}`}</small></div>}
           {editingRoads&&<div className="road-editor-tools"><button className={showRoadEditorLegend?"active":""} onClick={()=>{setShowRoadEditorLegend((value)=>!value);setShowGpsCalibration(false);setShowAnchorValidation(false);}}>Key</button><button className={showGpsCalibration?"active":""} onClick={()=>{setShowGpsCalibration((value)=>!value);setShowRoadEditorLegend(false);}}>GPS <span>{gpsCalibration.count}</span></button></div>}
           {editingRoads&&showRoadEditorLegend&&<div className="road-editor-legend" aria-label="Road editor legend"><strong>Road editor key</strong><span><i className="road-key-line saved"/>Road network</span><span><i className="road-key-line active"/>Extending now</span><span><i className="road-key-point"/>Editable point</span><span><i className="road-key-point selected"/>Selected point</span><span><i className="road-key-line walkway"/>Approved walkway</span><span><i className="road-key-line issue"/>Tap to allow walkway</span></div>}
-          <div ref={mapViewportRef} className="map-viewport" onClick={onMapClick}>
+          <div ref={mapViewportRef} className="map-viewport" onPointerDown={()=>{if(trackingActive&&followLocation)setFollowLocation(false);}} onClick={onMapClick}>
             <div ref={mapRef} className={`map-surface ${editingRoads?"editing-roads":""}`} style={{ width: `${zoom * 100}%` }}>
               {/* A native image is required because routing samples its pixels through canvas. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -818,7 +833,7 @@ export default function Home() {
           {!editingRoads&&trackingActive&&arrivalState&&activeDestination&&<div className={`arrival-card ${arrivalState}`}><div><strong>{arrivalState==="arrived"?"You’ve arrived":"Approaching delivery"}</strong><span>{addressLabel(activeDestination)}</span>{activeDestinationOrder&&<small>{activeDestinationOrder.customerName} · {activeDestinationOrder.items}</small>}</div>{arrivalState==="arrived"&&activeDestinationOrder&&<button onClick={()=>{setSelectedOrderId(activeDestinationOrder.id);setSelectedAddressId(activeDestination.id);}}>Open order</button>}</div>}
           </div>
           <p className="map-hint">Drag the map, use the zoom controls, then tap the exact customer lot to create a pin. Route lines are an offline road guide and should be checked before leaving.</p>
-          <div className={`map-action-stack ${editingRoads?"road-editor-zoom":""}`}><button aria-label="Zoom in" onClick={() => changeMapZoom(.25)}>+</button><button aria-label="Zoom out" onClick={() => changeMapZoom(-.25)}>−</button>{editingRoads?<button aria-label="Reset map view" onClick={resetMapView}>↺</button>:displayedGpsPoint?<button aria-label="Center on me" onClick={recenterGps}>◎</button>:<button aria-label="Center on owner home" disabled={!owner} onClick={recenterOwner}>⌂</button>}</div>
+          <div className={`map-action-stack ${editingRoads?"road-editor-zoom":""}`}><button aria-label="Zoom in" onClick={() => changeMapZoom(.25)}>+</button><button aria-label="Zoom out" onClick={() => changeMapZoom(-.25)}>−</button>{editingRoads?<button aria-label="Reset map view" onClick={resetMapView}>↺</button>:displayedGpsPoint?<button className={followLocation?"following":""} aria-pressed={followLocation} aria-label={followLocation?"Turn off Follow me":"Center and follow me"} onClick={()=>{if(followLocation){setFollowLocation(false);lastFollowPointRef.current=null;}else{setFollowLocation(true);recenterGps();}}}>◎</button>:<button aria-label="Center on owner home" disabled={!owner} onClick={recenterOwner}>⌂</button>}</div>
           {editingRoads?<div className="road-editor-toolbar"><div><strong>{movingRoadPoint?"Tap the corrected road position":activeRoadPathId?"Extending road":selectedRoadPoint?"Road point selected":"Road editor"}</strong><small>{activeRoadPathId?"Tap the map to extend, or tap another point to connect.":selectedRoadPoint?"Choose one action below.":roadNetwork.paths.length?"Tap a road point to edit it.":"Tap a road center to begin."}</small></div><button disabled={!activeRoadPathId&&!roadUndoCount} onClick={undoRoadPoint}>Undo</button><button disabled={!selectedRoadPoint} onClick={extendFromSelectedRoadPoint}>Extend</button><button disabled={!selectedRoadPoint} onClick={()=>setMovingRoadPoint(true)}>Move</button><button disabled={!selectedRoadPoint} onClick={deleteSelectedRoadPoint}>Delete</button><button disabled={!selectedRoadPoint} onClick={()=>{setShowGpsCalibration(true);setShowRoadEditorLegend(false);}}>GPS</button>{activeRoadPathId&&<button onClick={()=>{setActiveRoadPathId(null);setSelectedRoadPoint(null);setMovingRoadPoint(false);}}>Stop</button>}<button className="road-editor-done" onClick={finishRoadEditing}>Done</button><button className="road-editor-clear" disabled={!roadNetwork.paths.length} onClick={()=>{if(window.confirm("Remove the entire traced road network?")){commitRoadEdit(()=>({version:1,paths:[],active:false}));setActiveRoadPathId(null);setSelectedRoadPoint(null);}}}>Clear all</button></div>:isHydrated && (entryMode==="address"&&!pendingPoint?<button className="map-add-button map-home-button" disabled>Tap map to pin</button>:owner ? <button className="map-add-button" onClick={beginOrder}>+ New order</button> : entryMode !== "owner" ? <button className="map-add-button map-home-button" onClick={beginOwnerSetup}>⌂ Set home location</button> : null)}
         </section>
 
