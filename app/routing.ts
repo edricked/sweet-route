@@ -10,8 +10,8 @@ const ROAD_EXCLUSIONS: Point[][] = [
   // printed fill is not a drivable road, even though it matches road colors.
   // Follow its slanted outline so nearby real roads remain connected.
   [
-    {x:.433481,y:.777326}, {x:.511533,y:.742273}, {x:.558980,y:.777042},
-    {x:.541113,y:.801089}, {x:.484604,y:.794422}, {x:.440320,y:.806299},
+    {x:.345,y:.755}, {x:.455,y:.755}, {x:.505,y:.825},
+    {x:.475,y:.845}, {x:.405,y:.805}, {x:.345,y:.795},
   ],
 ];
 
