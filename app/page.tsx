@@ -456,15 +456,14 @@ export default function Home() {
 
   function correctSelectedGpsAnchor(){
     if(!selectedCalibrationAnchor||!selectedAnchorValidation||selectedAnchorValidation.status==="good")return;
-    const corrected=selectedAnchorValidation.predicted;
-    if(!window.confirm(`Move this anchor ${Math.round(selectedAnchorValidation.errorMeters)} m to its validated position? You can undo this from the road editor.`))return;
+    const corrected=selectedAnchorValidation.correctedCoordinate;
+    if(!window.confirm(`Replace this anchor's GPS coordinates so they match its existing road point? The road point will not move, and you can undo this change.`))return;
     commitRoadEdit((current)=>({
       ...current,
       active:false,
-      paths:current.paths.map((path)=>({...path,points:path.points.map((point)=>point.id===selectedCalibrationAnchor.roadPointId?{...point,...corrected}:point)})),
-      calibrationAnchors:(current.calibrationAnchors??[]).map((anchor)=>anchor.id===selectedCalibrationAnchor.id?{...anchor,...corrected}:anchor),
+      calibrationAnchors:(current.calibrationAnchors??[]).map((anchor)=>anchor.id===selectedCalibrationAnchor.id?{...anchor,...corrected,capturedAt:new Date().toISOString(),source:"manual"}:anchor),
     }));
-    setGpsMessage("Anchor moved to its validated position. Use Undo if the road alignment does not look correct.");
+    setGpsMessage("Anchor coordinates corrected. Its road point stayed in place; use Undo if needed.");
   }
 
   async function testCurrentLocation(){

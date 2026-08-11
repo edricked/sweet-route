@@ -74,6 +74,21 @@ export function gpsToImage(reading:GeoReading,anchors:CalibrationAnchor[]):Point
   return {x:project(coefficients.x),y:project(coefficients.y)};
 }
 
+export function imageToGps(point:Point,anchors:CalibrationAnchor[]):Pick<GeoReading,"latitude"|"longitude">|null {
+  if(anchors.length<3)return null;
+  const origin=anchors[0],latitude=origin.latitude*Math.PI/180;
+  const normal=Array.from({length:3},()=>Array(3).fill(0)) as number[][],eastValues=[0,0,0],northValues=[0,0,0];
+  for(const anchor of anchors){
+    const pixelX=(anchor.x-point.x)*MAP_WIDTH,pixelY=(anchor.y-point.y)*MAP_HEIGHT;
+    const row=[pixelX,pixelY,1],weight=1/Math.max(40,Math.hypot(pixelX,pixelY))**2;
+    const east=(anchor.longitude-origin.longitude)*EARTH_METERS_PER_DEGREE*Math.cos(latitude);
+    const north=(anchor.latitude-origin.latitude)*EARTH_METERS_PER_DEGREE;
+    for(let i=0;i<3;i++){eastValues[i]+=weight*row[i]*east;northValues[i]+=weight*row[i]*north;for(let j=0;j<3;j++)normal[i][j]+=weight*row[i]*row[j];}
+  }
+  const east=solve3(normal,eastValues),north=solve3(normal,northValues);if(!east||!north)return null;
+  return {latitude:origin.latitude+north[2]/EARTH_METERS_PER_DEGREE,longitude:origin.longitude+east[2]/(EARTH_METERS_PER_DEGREE*Math.cos(latitude))};
+}
+
 export function calibrationMetersPerPixel(anchors:CalibrationAnchor[]) {
   const ratios:number[]=[];
   for(let i=0;i<anchors.length;i++)for(let j=i+1;j<anchors.length;j++){
@@ -92,6 +107,7 @@ export function calibrationQuality(anchors:CalibrationAnchor[]) {
 export type AnchorValidationResult={
   anchor:CalibrationAnchor;
   predicted:Point;
+  correctedCoordinate:Pick<GeoReading,"latitude"|"longitude">;
   errorMeters:number;
   status:"good"|"review"|"poor";
 };
@@ -101,11 +117,13 @@ export function validateCalibrationAnchors(anchors:CalibrationAnchor[]):AnchorVa
   const metersPerPixel=calibrationMetersPerPixel(anchors);
   if(!metersPerPixel)return [];
   return anchors.flatMap((anchor,index)=>{
-    const predicted=gpsToImage({latitude:anchor.latitude,longitude:anchor.longitude,accuracy:anchor.accuracy,heading:null,speed:null,timestamp:new Date(anchor.capturedAt).getTime()},anchors.filter((_,anchorIndex)=>anchorIndex!==index));
-    if(!predicted)return [];
+    const otherAnchors=anchors.filter((_,anchorIndex)=>anchorIndex!==index);
+    const predicted=gpsToImage({latitude:anchor.latitude,longitude:anchor.longitude,accuracy:anchor.accuracy,heading:null,speed:null,timestamp:new Date(anchor.capturedAt).getTime()},otherAnchors);
+    const correctedCoordinate=imageToGps(anchor,otherAnchors);
+    if(!predicted||!correctedCoordinate)return [];
     const pixels=Math.hypot((predicted.x-anchor.x)*MAP_WIDTH,(predicted.y-anchor.y)*MAP_HEIGHT);
     const errorMeters=pixels*metersPerPixel;
-    return [{anchor,predicted,errorMeters,status:errorMeters<=6?"good":errorMeters<=12?"review":"poor"}];
+    return [{anchor,predicted,correctedCoordinate,errorMeters,status:errorMeters<=6?"good":errorMeters<=12?"review":"poor"}];
   });
 }
 
