@@ -175,7 +175,7 @@ button:disabled { cursor:not-allowed; opacity:.5; }
 .live-tracking-panel { left:14px; bottom:14px; width:min(355px,calc(100% - 100px)); padding:11px; border-radius:16px; }.live-tracking-panel.active { border-color:#84b99a; }
 .tracking-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }.tracking-status { flex:0 0 auto; padding:4px 7px; border-radius:999px; color:#526057; background:#edf2ee; font-size:9px; font-weight:900; text-transform:capitalize; }.tracking-status.tracking { color:#fff; background:#176b45; }
 .tracking-mode button { flex:1; display:flex; align-items:center; justify-content:center; gap:5px; }.tracking-mode button span { font-size:15px; }.tracking-mode button.active { border-color:#176b45; color:#fff; background:#176b45; }
-.tracking-actions { flex-wrap:wrap; }.tracking-actions .tracking-primary { color:#fff; background:#176b45; }.tracking-actions .tracking-stop { color:#a12f2f; border-color:#e1baba; }
+.tracking-actions { display:grid; grid-template-columns:1fr 1fr; }.tracking-actions .tracking-primary { color:#fff; background:#176b45; }.tracking-actions .tracking-stop { color:#a12f2f; border-color:#e1baba; }.tracking-actions .tracking-mode-toggle { display:flex; align-items:center; justify-content:center; gap:5px; }.tracking-mode-toggle span { font-size:14px; }
 .arrival-card { right:14px; bottom:14px; width:min(300px,calc(100% - 28px)); padding:12px; border-color:#efca64; border-radius:16px; background:#fffaf0f5; }.arrival-card strong { font-size:14px; }.arrival-card span { color:var(--muted); font-size:10px; }.arrival-card button { color:#fff; background:#176b45; }
 
 @media (max-width:720px) {
@@ -184,8 +184,8 @@ button:disabled { cursor:not-allowed; opacity:.5; }
   .gps-calibration-panel { position:fixed; z-index:46; top:calc(52px + env(safe-area-inset-top)); left:8px; right:8px; width:auto; max-height:min(310px,52dvh); overflow:auto; }
   .manual-coordinate-entry { grid-template-columns:1fr 1fr; }.manual-coordinate-entry button { grid-column:1/-1; }
   .live-tracking-panel { position:fixed; z-index:36; left:10px; bottom:calc(80px + env(safe-area-inset-bottom)); width:min(250px,calc(100% - 82px)); padding:9px; }
-  .live-tracking-panel:not(.active) .tracking-mode,.live-tracking-panel:not(.active) .tracking-actions button:not(.tracking-primary),.live-tracking-panel:not(.active) .tracking-message:empty { display:none; }
-  .tracking-mode button { min-height:31px; padding:0 6px; }.tracking-actions button { min-height:32px; }
+  .live-tracking-panel:not(.active) .tracking-message:empty { display:none; }
+  .tracking-actions button { min-height:32px; }
   .arrival-card { position:fixed; z-index:39; right:10px; bottom:calc(80px + env(safe-area-inset-bottom)); width:min(275px,calc(100% - 20px)); }
   .map-card.road-editing .gps-calibration-panel { display:grid; }
 }
@@ -213,20 +213,19 @@ button:disabled { cursor:not-allowed; opacity:.5; }
     position:relative;
     inset:auto;
     order:2;
-    width:auto;
-    padding:12px;
-    gap:10px;
-    border-radius:18px;
+    align-self:flex-end;
+    width:min(330px,calc(100vw - 20px));
+    padding:10px;
+    gap:8px;
+    border-radius:16px;
     background:#fffffff8;
   }
-  .live-tracking-panel.active .tracking-heading strong { font-size:14px; }
-  .live-tracking-panel.active .tracking-heading small { margin-top:2px; font-size:11px; }
-  .live-tracking-panel.active .tracking-status { padding:5px 9px; font-size:10px; }
-  .live-tracking-panel.active .tracking-mode { display:grid; grid-template-columns:1fr 1fr; }
-  .live-tracking-panel.active .tracking-mode button { min-height:40px; border-radius:11px; font-size:11px; }
-  .live-tracking-panel.active .tracking-actions { display:grid; grid-template-columns:auto 1fr 1fr; }
-  .live-tracking-panel.active .tracking-actions button { min-width:0; min-height:38px; padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .live-tracking-panel.active .tracking-message { padding:7px 9px; border-radius:9px; color:#785c18; background:#fff7dc; line-height:1.35; }
+  .live-tracking-panel.active .tracking-heading strong { font-size:13px; }
+  .live-tracking-panel.active .tracking-heading small { margin-top:1px; font-size:10px; }
+  .live-tracking-panel.active .tracking-status { padding:4px 8px; font-size:9px; }
+  .live-tracking-panel.active .tracking-actions { grid-template-columns:1fr 1.15fr; }
+  .live-tracking-panel.active .tracking-actions button { min-width:0; min-height:34px; padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .live-tracking-panel.active .tracking-message { max-height:38px; overflow:auto; padding:6px 8px; border-radius:8px; color:#785c18; background:#fff7dc; font-size:9px; line-height:1.3; }
 
   .arrival-card {
     position:relative;
