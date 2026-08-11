@@ -663,7 +663,15 @@ export default function Home() {
   function recenterGps(){
     if(!displayedGpsPoint||!mapViewportRef.current||!mapRef.current)return;
     const viewport=mapViewportRef.current,surface=mapRef.current;
-    viewport.scrollTo({left:Math.max(0,displayedGpsPoint.x*surface.offsetWidth-viewport.clientWidth/2),top:Math.max(0,displayedGpsPoint.y*surface.offsetHeight-viewport.clientHeight/2),behavior:"smooth"});
+    const centerOnGps=()=>{
+      const viewportRect=viewport.getBoundingClientRect(),surfaceRect=surface.getBoundingClientRect();
+      const markerX=surfaceRect.left+displayedGpsPoint.x*surfaceRect.width;
+      const markerY=surfaceRect.top+displayedGpsPoint.y*surfaceRect.height;
+      viewport.scrollLeft+=markerX-(viewportRect.left+viewportRect.width/2);
+      viewport.scrollTop+=markerY-(viewportRect.top+viewportRect.height/2);
+    };
+    centerOnGps();
+    window.requestAnimationFrame(centerOnGps);
   }
 
   function changeMapZoom(delta:number) {
