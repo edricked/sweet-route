@@ -8,7 +8,7 @@ type TrackingStatus="idle"|"requesting"|"tracking"|"error";
 export function useLiveGeolocation(){
   const watchRef=useRef<number|null>(null),readingsRef=useRef<GeoReading[]>([]),stableReadingRef=useRef<GeoReading|null>(null),wakeLockRef=useRef<{release:()=>Promise<void>}|null>(null);
   const [status,setStatus]=useState<TrackingStatus>("idle"),[reading,setReading]=useState<GeoReading|null>(null),[error,setError]=useState("");
-  const stop=useCallback(()=>{if(watchRef.current!==null&&navigator.geolocation)navigator.geolocation.clearWatch(watchRef.current);watchRef.current=null;readingsRef.current=[];stableReadingRef.current=null;void wakeLockRef.current?.release();wakeLockRef.current=null;setStatus("idle");},[]);
+  const stop=useCallback(()=>{if(watchRef.current!==null&&navigator.geolocation)navigator.geolocation.clearWatch(watchRef.current);watchRef.current=null;readingsRef.current=[];stableReadingRef.current=null;void wakeLockRef.current?.release();wakeLockRef.current=null;setReading(null);setError("");setStatus("idle");},[]);
   const start=useCallback(async()=>{
     if(!navigator.geolocation){setError("Geolocation is unavailable on this device.");setStatus("error");return;}
     stop();setStatus("requesting");setError("");
