@@ -143,6 +143,7 @@ export default function Home() {
   },[anchorValidation]);
   const selectedRoadPointValue=selectedRoadPoint?roadNetwork.paths.find((path)=>path.id===selectedRoadPoint.pathId)?.points[selectedRoadPoint.index]??null:null;
   const selectedCalibrationAnchor=selectedRoadPointValue?calibrationAnchors.find((anchor)=>anchor.roadPointId===selectedRoadPointValue.id)??null:null;
+  const selectedAnchorValidation=selectedCalibrationAnchor?anchorValidation.find((result)=>result.anchor.id===selectedCalibrationAnchor.id)??null:null;
   useEffect(()=>{
     if(selectedCalibrationAnchor){
       setManualLatitude(String(selectedCalibrationAnchor.latitude));
@@ -451,6 +452,19 @@ export default function Home() {
   function removeGpsAnchor(){
     if(!selectedCalibrationAnchor||!window.confirm("Remove this GPS calibration anchor?"))return;
     commitRoadEdit((current)=>({...current,calibrationAnchors:(current.calibrationAnchors??[]).filter((anchor)=>anchor.id!==selectedCalibrationAnchor.id)}));setGpsMessage("GPS anchor removed.");
+  }
+
+  function correctSelectedGpsAnchor(){
+    if(!selectedCalibrationAnchor||!selectedAnchorValidation||selectedAnchorValidation.status==="good")return;
+    const corrected=selectedAnchorValidation.predicted;
+    if(!window.confirm(`Move this anchor ${Math.round(selectedAnchorValidation.errorMeters)} m to its validated position? You can undo this from the road editor.`))return;
+    commitRoadEdit((current)=>({
+      ...current,
+      active:false,
+      paths:current.paths.map((path)=>({...path,points:path.points.map((point)=>point.id===selectedCalibrationAnchor.roadPointId?{...point,...corrected}:point)})),
+      calibrationAnchors:(current.calibrationAnchors??[]).map((anchor)=>anchor.id===selectedCalibrationAnchor.id?{...anchor,...corrected}:anchor),
+    }));
+    setGpsMessage("Anchor moved to its validated position. Use Undo if the road alignment does not look correct.");
   }
 
   async function testCurrentLocation(){
@@ -831,7 +845,7 @@ export default function Home() {
           </div>
           {editingRoads&&showGpsCalibration&&<div className="gps-calibration-panel">
             <div className="gps-calibration-heading"><div><strong>GPS calibration</strong><span>{gpsCalibration.count} anchor{gpsCalibration.count===1?"":"s"} · {gpsCalibration.recommended?"recommended coverage":gpsCalibration.ready?"basic calibration":"3 required"}</span><small>{selectedRoadPointValue?selectedCalibrationAnchor?`Saved ${selectedCalibrationAnchor.source==="manual"?"Google Maps":"device"} anchor selected. Replace its coordinates below or remove it.`:"Road point selected. Save its real coordinates.":"Tap a blue road point, then save its real coordinates."}</small></div><button onClick={()=>setShowGpsCalibration(false)} aria-label="Close GPS calibration">×</button></div>
-            <div className="gps-calibration-actions"><button disabled={capturingGps} onClick={()=>void setGpsAnchor()}>{capturingGps?"Reading GPS…":selectedCalibrationAnchor?"Replace with current location":"Use current location"}</button><button disabled={!selectedCalibrationAnchor||capturingGps} onClick={removeGpsAnchor}>Remove anchor</button><button disabled={!gpsCalibration.ready||capturingGps} onClick={()=>void testCurrentLocation()}>Test</button><button className={showAnchorValidation?"active":""} disabled={anchorValidation.length<4} onClick={()=>setShowAnchorValidation((value)=>!value)}>{showAnchorValidation?"Hide check":"Validate"}</button></div>
+            <div className="gps-calibration-actions"><button disabled={capturingGps} onClick={()=>void setGpsAnchor()}>{capturingGps?"Reading GPS…":selectedCalibrationAnchor?"Replace with current location":"Use current location"}</button><button disabled={!selectedCalibrationAnchor||capturingGps} onClick={removeGpsAnchor}>Remove anchor</button><button disabled={!gpsCalibration.ready||capturingGps} onClick={()=>void testCurrentLocation()}>Test</button><button className={showAnchorValidation?"active":""} disabled={anchorValidation.length<4} onClick={()=>setShowAnchorValidation((value)=>!value)}>{showAnchorValidation?"Hide check":"Validate"}</button>{showAnchorValidation&&selectedAnchorValidation&&selectedAnchorValidation.status!=="good"&&<button className="anchor-correct-button" onClick={correctSelectedGpsAnchor}>Correct this anchor · {Math.round(selectedAnchorValidation.errorMeters)} m</button>}</div>
             {showAnchorValidation&&anchorValidationSummary&&<div className={`anchor-validation-summary ${anchorValidationSummary.needsReview?"review":"good"}`}><strong>{anchorValidationSummary.needsReview?`${anchorValidationSummary.needsReview} anchor${anchorValidationSummary.needsReview===1?"":"s"} need review`:"Anchors agree"}</strong><span>Median {anchorValidationSummary.median.toFixed(1)} m · Maximum {anchorValidationSummary.maximum.toFixed(1)} m</span><small>Crosshairs are GPS-predicted positions; lines connect them to saved road points.</small></div>}
             {calibrationAnchors.length<4&&<small className="anchor-validation-requirement">Add at least 4 anchors to validate them independently.</small>}
             <div className="manual-coordinate-entry"><span>{selectedCalibrationAnchor?"Replace using Google Maps coordinates":"Paste Google Maps (latitude, longitude), or enter separately"}</span><input aria-label="Anchor latitude or Google Maps coordinate pair" inputMode="decimal" placeholder="Latitude or paste pair" value={manualLatitude} onPaste={(event)=>{const value=event.clipboardData.getData("text");if(applyPastedCoordinatePair(value))event.preventDefault();}} onChange={(event)=>{if(!applyPastedCoordinatePair(event.target.value))setManualLatitude(event.target.value);}}/><input aria-label="Anchor longitude" inputMode="decimal" placeholder="Longitude" value={manualLongitude} onChange={(event)=>setManualLongitude(event.target.value)}/><button disabled={!manualLatitude.trim()||!manualLongitude.trim()} onClick={saveManualGpsAnchor}>{selectedCalibrationAnchor?"Replace coordinates":"Save anchor"}</button></div>
