@@ -89,6 +89,26 @@ export function calibrationQuality(anchors:CalibrationAnchor[]) {
   return {count:anchors.length,quadrants:quadrants.size,averageAccuracy,ready:anchors.length>=3,recommended:anchors.length>=6&&quadrants.size>=3&&averageAccuracy<=10};
 }
 
+export type AnchorValidationResult={
+  anchor:CalibrationAnchor;
+  predicted:Point;
+  errorMeters:number;
+  status:"good"|"review"|"poor";
+};
+
+export function validateCalibrationAnchors(anchors:CalibrationAnchor[]):AnchorValidationResult[] {
+  if(anchors.length<4)return [];
+  const metersPerPixel=calibrationMetersPerPixel(anchors);
+  if(!metersPerPixel)return [];
+  return anchors.flatMap((anchor,index)=>{
+    const predicted=gpsToImage({latitude:anchor.latitude,longitude:anchor.longitude,accuracy:anchor.accuracy,heading:null,speed:null,timestamp:new Date(anchor.capturedAt).getTime()},anchors.filter((_,anchorIndex)=>anchorIndex!==index));
+    if(!predicted)return [];
+    const pixels=Math.hypot((predicted.x-anchor.x)*MAP_WIDTH,(predicted.y-anchor.y)*MAP_HEIGHT);
+    const errorMeters=pixels*metersPerPixel;
+    return [{anchor,predicted,errorMeters,status:errorMeters<=6?"good":errorMeters<=12?"review":"poor"}];
+  });
+}
+
 export function roadSegmentKey(from:Point,to:Point) {
   return [from,to].map((point)=>`${point.x.toFixed(6)}:${point.y.toFixed(6)}`).sort().join("|");
 }
